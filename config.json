@@ -1,0 +1,15 @@
+{
+  "moteur_recherche": "https://www.google.com/search?q={q}",
+  "qualite_max": 1080,
+  "fps_max": 60,
+  "nb_resultats": 14,
+  "miniatures": true,
+  "cookies_navigateur": true,
+  "mpv_extra": [],
+  "youtube_client": "",
+  "solveur_distant": true,
+  "veille_onglets": 90,
+  "intro": true,
+  "glissement_onglets": true,
+  "manifeste_maj": "https://plume-nav.github.io/plume/version.json"
+}

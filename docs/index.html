@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plume — un navigateur qui joue les vidéos avec mpv</title>
+<meta name="description" content="Un navigateur léger qui remplace le lecteur des sites par mpv : moins de mémoire, pas de publicité, l'image reste dans la page.">
+<link rel="icon" href="plume.ico">
+<meta property="og:title" content="Plume">
+<meta property="og:description" content="Un navigateur qui joue les vidéos avec mpv au lieu du lecteur du site.">
+<style>
+:root {
+  --fond: #12131a;
+  --fond2: #1a1b26;
+  --bord: #2b2c3a;
+  --texte: #fbfbfe;
+  --texte2: #a39bbd;
+  --accent: #7c5cff;
+  --accent-pale: #a78bfa;
+  --avert-fond: #241d12;
+  --avert-bord: #5c4820;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--fond);
+  color: var(--texte);
+  font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- L'intro, la meme que celle du navigateur au lancement --------------- */
+#intro {
+  position: fixed; inset: 0; z-index: 100;
+  width: 100%; height: 100%; display: block;
+  background: #12131a; cursor: pointer;
+}
+#intro.partie { opacity: 0; pointer-events: none; transition: opacity .28s; }
+/* La page arrive derriere la toile qui s'ecarte, elle ne la remplace pas. */
+#page { opacity: 0; transition: opacity .5s ease-out; }
+#page.visible { opacity: 1; }
+body.attend { overflow: hidden; }
+
+.enveloppe { max-width: 780px; margin: 0 auto; padding: 0 24px 96px; }
+
+header { padding: 84px 0 44px; }
+.logotype { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
+.logotype svg { width: 46px; height: 46px; flex: none; }
+h1 {
+  font-size: 62px; margin: 0; letter-spacing: -2px; font-weight: 600;
+  line-height: 1;
+}
+h1 .point { color: var(--accent-pale); }
+.accroche {
+  font-size: 21px; color: var(--texte2); margin: 0 0 36px; max-width: 33em;
+  line-height: 1.5;
+}
+h2 { font-size: 23px; margin: 56px 0 14px; letter-spacing: -0.4px; }
+h3 { font-size: 17px; margin: 26px 0 6px; }
+p { margin: 0 0 14px; }
+a { color: var(--accent-pale); }
+
+.bouton {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--accent); color: #fff; text-decoration: none;
+  padding: 15px 30px; border-radius: 11px; font-weight: 600; font-size: 17px;
+  box-shadow: 0 6px 30px -8px rgba(124, 92, 255, .8);
+  transition: transform .12s, box-shadow .2s, background .2s;
+}
+.bouton:hover {
+  background: #8f74ff; transform: translateY(-1px);
+  box-shadow: 0 10px 38px -8px rgba(124, 92, 255, .95);
+}
+.sous-bouton { color: var(--texte2); font-size: 14px; margin-top: 14px; }
+
+code, .empreinte {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+}
+code { color: var(--accent-pale); }
+.empreinte {
+  display: block; background: var(--fond2); border: 1px solid var(--bord);
+  border-radius: 9px; padding: 13px 15px; overflow-x: auto;
+  color: var(--texte2); white-space: pre; line-height: 1.7;
+}
+.avertissement {
+  background: var(--avert-fond); border: 1px solid var(--avert-bord);
+  border-radius: 12px; padding: 20px 24px; margin: 32px 0;
+}
+.avertissement h2 { margin-top: 0; font-size: 20px; }
+
+.traits { list-style: none; padding: 0; margin: 0; }
+.traits li {
+  border-top: 1px solid var(--bord); padding: 16px 0;
+}
+.traits b { display: block; font-weight: 600; margin-bottom: 2px; }
+.traits span { color: var(--texte2); }
+
+footer {
+  border-top: 1px solid var(--bord); margin-top: 72px; padding-top: 26px;
+  color: var(--texte2); font-size: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --fond: #fcfbff; --fond2: #f2effa; --bord: #e0daf0;
+    --texte: #16121f; --texte2: #5b5273;
+    --accent: #6c4fc0; --accent-pale: #553a9e;
+    --avert-fond: #fdf7e6; --avert-bord: #e3cf99;
+  }
+  /* L'intro garde son fond sombre : c'est celui du navigateur, et un
+     logotype pale sur fond clair ne serait plus le meme objet. */
+}
+@media (max-width: 560px) {
+  h1 { font-size: 46px; }
+  .accroche { font-size: 18px; }
+  header { padding: 56px 0 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  #page { transition: none; }
+}
+</style>
+</head>
+<body class="attend">
+
+<canvas id="intro" aria-hidden="true"></canvas>
+
+<div id="page">
+<div class="enveloppe">
+
+<header>
+  <div class="logotype">
+    <!-- L'etoile a quatre branches de l'icone, cotes concaves. -->
+    <svg viewBox="-1 -1 2 2" aria-hidden="true">
+      <path fill="#a78bfa"
+            d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/>
+    </svg>
+    <h1>Plume<span class="point">.</span></h1>
+  </div>
+  <p class="accroche">Un navigateur qui joue les vidéos avec mpv au lieu du
+  lecteur du site : moins de mémoire, pas de publicité, et l'image reste dans
+  la page.</p>
+  <a class="bouton" id="lien-telechargement"
+     href="https://github.com/Plume-nav/plume/releases/latest">
+     Télécharger pour Windows</a>
+  <p class="sous-bouton">Windows 10 (1809) ou 11 &middot;
+  <span id="taille">environ 120 Mo</span> &middot;
+  rien à installer en plus</p>
+</header>
+
+<div class="avertissement">
+  <h2>Windows va se plaindre. C'est normal, et voici pourquoi</h2>
+  <p>Plume n'est signée par aucun certificat. Un certificat de signature coûte
+  plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour
+  quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.</p>
+
+  <h3>Fenêtre bleue, « Windows a protégé votre ordinateur »</h3>
+  <p>C'est un avertissement de réputation, pas une détection. Cliquer sur
+  <b>Informations complémentaires</b>, puis <b>Exécuter quand même</b>.</p>
+
+  <h3>Alerte rouge parlant d'un cheval de Troie</h3>
+  <p>Souvent nommé <code>Wacatac</code> ou <code>Bearfoos</code>, avec
+  <code>!ml</code> à la fin. C'est un faux positif connu des programmes Python
+  compilés, et le <code>!ml</code> signifie justement que le verdict vient
+  d'une heuristique et non d'une signature.</p>
+  <p><b>Ne passez pas outre sur parole.</b> Vérifiez que le fichier reçu est
+  bien celui qui a été publié, en comparant son empreinte à celle-ci :</p>
+  <code class="empreinte" id="empreinte">Get-FileHash .\Plume-installeur.exe -Algorithm SHA256</code>
+  <p>Si elle correspond, le fichier n'a pas été altéré en chemin. Sinon, ne
+  lancez rien.</p>
+  <p>N'ajoutez pas d'exclusion antivirus permanente pour faire taire l'alerte :
+  on prend vite l'habitude de désactiver des protections, et c'est le réflexe
+  qu'il vaut mieux ne pas acquérir.</p>
+</div>
+
+<h2>Ce que Plume fait</h2>
+<ul class="traits">
+  <li><b>mpv à la place du lecteur du site</b>
+  <span>L'image reste exactement où elle était dans la page, mais c'est mpv qui
+  décode : nettement moins de mémoire, et aucune publicité vidéo.</span></li>
+  <li><b>Vos vidéos reprennent où vous les avez laissées</b>
+  <span>Fermez au milieu d'une vidéo : en rouvrant, elle repart au bon endroit,
+  sans rien vous demander.</span></li>
+  <li><b>Les onglets que vous ne regardez pas se mettent en veille</b>
+  <span>Ils rendent la mémoire, et y revenir les retrouve intacts — formulaire
+  à moitié rempli compris.</span></li>
+  <li><b>Des groupes de travail</b>
+  <span>Clic droit sur un onglet pour le ranger dans un groupe ; un clic sur la
+  page d'accueil rouvre tout le groupe.</span></li>
+  <li><b>Une fenêtre privée</b>
+  <span>Ni historique, ni cookies, ni onglets gardés. À la fermeture, tout
+  part.</span></li>
+  <li><b>Tout est inclus</b>
+  <span>Python, mpv, Deno et yt-dlp sont dans le paquet. Seul prérequis,
+  présent d'origine sur Windows 11 : le runtime WebView2.</span></li>
+</ul>
+
+<h2>Vie privée</h2>
+<p>Plume ne renvoie rien nulle part. L'historique, les favoris, les cookies et
+les positions de lecture sont des fichiers dans le sous-dossier
+<code>profil/</code>, sur votre machine ; les supprimer suffit à tout oublier.
+La seule requête que Plume émet d'elle-même est une vérification de version,
+une fois par jour, vers cette page — et elle se coupe en vidant
+<code>manifeste_maj</code> dans <code>config.json</code>.</p>
+
+<footer>
+  <p>Plume est un projet personnel, distribué tel quel, sans garantie.
+  <span id="version"></span></p>
+</footer>
+
+</div>
+</div>
+
+<script src="intro.js"></script>
+<script>
+// La page se remplit depuis version.json : une seule source pour le numero de
+// version, l'adresse de telechargement et l'empreinte. Publier une version
+// sans toucher a cette page devient donc impossible a rater.
+fetch("version.json", { cache: "no-store" })
+  .then(function (r) { return r.json(); })
+  .then(function (m) {
+    if (m.url) { document.getElementById("lien-telechargement").href = m.url; }
+    if (m.sha256) {
+      var nom = m.url ? m.url.split("/").pop() : "Plume-installeur.exe";
+      document.getElementById("empreinte").textContent =
+        "Get-FileHash .\\" + nom + " -Algorithm SHA256\n\n" + m.sha256;
+    }
+    if (m.taille_mo) {
+      document.getElementById("taille").textContent = m.taille_mo + " Mo";
+    }
+    if (m.version) {
+      document.getElementById("version").textContent =
+        "Version " + m.version + (m.date ? ", " + m.date : "") + ".";
+    }
+  })
+  .catch(function () { /* la page reste lisible sans le manifeste */ });
+
+// L'intro ne se joue qu'a l'arrivee. Revenir en arriere, ou recharger pour
+// relire un paragraphe, ne doit pas reimposer deux secondes et demie : une
+// intro qu'on subit deux fois devient une porte a pousser.
+(function () {
+  var toile = document.getElementById("intro");
+  var page = document.getElementById("page");
+
+  function reveler() {
+    toile.classList.add("partie");
+    page.classList.add("visible");
+    document.body.classList.remove("attend");
+    setTimeout(function () { toile.remove(); }, 400);
+  }
+
+  var dejaVue = false;
+  try { dejaVue = sessionStorage.getItem("intro-vue") === "1"; } catch (e) {}
+  if (dejaVue || !window.IntroPlume) {
+    reveler();
+    return;
+  }
+  try { sessionStorage.setItem("intro-vue", "1"); } catch (e) {}
+  window.IntroPlume.jouer(toile, reveler);
+})();
+</script>
+
+</body>
+</html>

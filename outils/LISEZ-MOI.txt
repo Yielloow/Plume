@@ -1,0 +1,205 @@
+Plume
+=====
+
+Un navigateur qui joue les videos avec mpv au lieu du lecteur du site :
+moins de memoire, pas de publicite, et l'image reste dans la page.
+
+DEMARRER
+--------
+Avant de decompresser : clic droit sur le zip, Proprietes, cocher
+« Debloquer » en bas, puis Appliquer. Sans ca, Windows marque chacun des
+fichiers extraits comme venant d'Internet et en bloque certains.
+
+Ensuite, double-cliquer sur Plume.exe. Rien a installer.
+
+SI WINDOWS SE PLAINT
+--------------------
+Plume n'est signe par aucun certificat, donc Windows ne le connait pas.
+Deux messages differents peuvent apparaitre.
+
+1. Fenetre bleue, « Windows a protege votre ordinateur ».
+   C'est un simple avertissement de reputation.
+   « Informations complementaires », puis « Executer quand meme ».
+
+2. Alerte rouge de l'antivirus parlant d'un cheval de Troie, souvent
+   nomme Wacatac ou Bearfoos, avec « !ml » a la fin.
+   C'est un faux positif connu des programmes Python compiles, et le
+   « !ml » signifie justement que le verdict vient d'une heuristique et
+   non d'une signature. Le comportement qui le declenchait, une
+   auto-extraction dans le dossier temporaire, a ete supprime de cette
+   version.
+
+   Ne passez pas outre sur parole. Verifiez d'abord que le fichier recu
+   est bien celui qui a ete construit, en comparant son empreinte a
+   celles listees dans EMPREINTES.txt :
+
+       Get-FileHash .\Plume.exe -Algorithm SHA256
+
+   Si l'empreinte correspond, le fichier n'a pas ete altere en chemin.
+   Si elle ne correspond pas, ne lancez rien et prevenez la personne qui
+   vous a transmis le paquet.
+
+   N'ajoutez pas d'exclusion antivirus permanente pour faire taire
+   l'alerte : on prend vite l'habitude de desactiver des protections, et
+   c'est le reflexe qu'il vaut mieux ne pas acquerir.
+
+SE CONNECTER, OU PAS
+--------------------
+Ce n'est pas necessaire pour regarder YouTube : Plume lit les videos sans
+votre session, et c'est meme plus fiable ainsi, YouTube refusant une partie
+des flux quand on la lui presente.
+
+Se connecter reste utile pour vos abonnements, votre historique et les
+videos a restriction d'age. Dans ce cas, le bouton « Se connecter » en haut
+a droite de la page : une seule fois suffit, la session est conservee d'un
+lancement a l'autre, et Plume ne s'en sert que si une lecture echoue sans.
+
+Twitch fonctionne sans connexion.
+
+TELECHARGEMENTS
+---------------
+Les fichiers vont dans votre dossier Telechargements. Un bandeau vous dit
+lequel et ou, des que c'est fini.
+
+VOS ONGLETS REVIENNENT
+----------------------
+Les onglets ouverts sont rouverts au lancement suivant, chaque fenetre
+retrouvant sa place et sa taille, y compris sur un second ecran. Ctrl+Maj+T
+rouvre le dernier onglet ferme par erreur.
+
+Sur une page video, un bouton dans la barre d'adresse permet de repasser au
+lecteur du site si celui de Plume se comporte mal.
+
+LA BARRE D'ADRESSE SE SOUVIENT
+------------------------------
+Des la deuxieme lettre tapee, Plume propose vos favoris et les pages deja
+visitees. Les fleches Haut et Bas parcourent la liste, Entree ouvre,
+Echap referme.
+
+Cet historique est un simple fichier dans le sous-dossier profil/. Rien
+n'est envoye nulle part, et le supprimer suffit a tout oublier.
+
+FENETRE PRIVEE
+--------------
+Ctrl+Maj+N ouvre une fenetre au bord violet, marquee « prive ». Elle ne
+garde ni historique, ni cookies, ni onglets : a sa fermeture, tout part.
+Elle n'est pas rouverte au lancement suivant.
+
+Ce qu'elle ne fait pas, et il vaut mieux le savoir : les fichiers que vous
+telechargez restent sur le disque, et votre fournisseur d'acces voit
+toujours passer le trafic. « Prive » veut dire « rien de garde ici », pas
+« invisible sur le reseau ».
+
+AU LANCEMENT
+------------
+Le nom de Plume s'ecrit sur une page a lui pendant que le navigateur se
+prepare derriere. L'ecran reste tant que tout n'est pas pret, puis
+s'efface et laisse la place aux fenetres.
+
+Un clic passe la sequence ; pour la supprimer, mettre intro a false dans
+config.json.
+
+GROUPES DE TRAVAIL
+------------------
+Clic droit sur un onglet, puis « Nouveau groupe de travail » : la page y
+est rangee. Le meme menu permet d'ajouter d'autres pages au groupe, ou
+de les en retirer.
+
+Sur la page d'accueil, chaque groupe est une carte : un clic rouvre
+toutes ses pages d'un coup, la croix supprime le groupe. Un groupe
+« dev » vous remet donc au travail en un geste, tous les matins.
+
+Une page deja ouverte n'est pas ouverte deux fois, et un groupe est
+limite a douze pages : les rouvrir toutes doit rester tenable.
+
+LES ONGLETS QUE VOUS NE REGARDEZ PAS SE METTENT EN VEILLE
+--------------------------------------------------------
+Au bout d'une minute et demie, un onglet d'arriere-plan est gele : il rend
+de la memoire, arrete de tourner, et son titre passe en gris avec un petit
+point. Il n'est pas ferme pour autant. Y revenir le rend instantanement
+tel quel, sans rechargement, meme un formulaire a moitie rempli.
+
+L'onglet qui joue une video n'est jamais gele. Pour desactiver, mettre
+veille_onglets a 0 dans config.json.
+
+CHANGER D'ONGLET FAIT GLISSER LA PAGE
+-------------------------------------
+Cliquer sur un onglet ne remplace plus la page d'un coup : celle que vous
+quittez part d'un cote, celle que vous ouvrez arrive de l'autre. L'onglet
+de gauche glisse vers la gauche, celui de droite vers la droite.
+
+Un onglet neuf arrive par la droite, de la meme facon. Et la page d'un
+onglet ferme tombe hors du cadre, decouvrant celle qui prend sa place.
+
+Si l'animation vous gene, mettre glissement_onglets a false dans
+config.json. Rien d'autre ne change.
+
+LE ZOOM EST RETENU PAR SITE
+---------------------------
+Ctrl+= et Ctrl+- ajustent la taille d'un site, de 50 % a 200 %. Le reglage
+est garde pour vos prochaines visites de ce site, sans toucher aux autres.
+Ctrl+0 revient a 100 %.
+
+CE QUI EST INCLUS
+-----------------
+Tout : Python, les bibliotheques, mpv (le lecteur), Deno et yt-dlp.
+Seul prerequis, present d'origine sur Windows 11 : le runtime WebView2.
+
+RACCOURCIS
+----------
+Ctrl+T        nouvel onglet, adresse prete a la saisie
+Ctrl+Maj+T    rouvrir le dernier onglet ferme
+Ctrl+W        fermer l'onglet
+Ctrl+Tab      onglet suivant, Ctrl+Maj+Tab le precedent
+Ctrl+1 a 8    aller directement a cet onglet, Ctrl+9 au dernier
+Alt+fleches   reculer, avancer
+Ctrl+N        nouvelle fenetre
+Ctrl+Maj+N    nouvelle fenetre privee
+Ctrl+L        barre d'adresse
+Ctrl+D        ajouter ou retirer des favoris
+Ctrl+B        afficher ou masquer la barre des favoris
+Ctrl+F        rechercher dans la page (quand la page a le focus)
+Ctrl+= Ctrl+- zoom du site, retenu pour la prochaine fois
+Ctrl+0        zoom a 100 %
+F5            recharger
+f             plein ecran, quand la video a le focus
+
+Le clic du milieu sur un onglet le ferme. Fermer le dernier onglet ferme
+la fenetre.
+
+VOS VIDEOS REPRENNENT OU VOUS LES AVEZ LAISSEES
+-----------------------------------------------
+Fermez Plume au milieu d'une video : en la rouvrant, elle repart ou vous
+en etiez, sans rien vous demander.
+
+Les videos a peine commencees (moins de trente secondes) ne sont pas
+retenues, et celles que vous avez terminees sont oubliees : pas de
+reprise au generique. Tout cela vit dans profil/positions.json, sur
+votre disque, et supprimer ce fichier efface tout.
+
+Une playlist YouTube s'enchaine toute seule : a la fin d'une video,
+Plume passe a la suivante de la liste, et s'arrete a la derniere. Le
+lecteur ne passe plus devant la fenetre au changement de video.
+
+Dans le lecteur video : la molette fait defiler la page, elle ne saute
+plus dans la video. Le bouton en forme de cadre large, a gauche du plein
+ecran, passe le site en mode theatre.
+
+Tirer un onglet vers le bas le sort dans sa propre fenetre ; le lacher sur
+la barre d'onglets d'une autre fenetre l'y fait passer. Le clic droit sur
+l'icone de la barre des taches propose « Nouvelle fenetre ».
+
+VIE PRIVEE
+----------
+Vos cookies restent dans le sous-dossier profil/, sur votre machine.
+Ce dossier contient votre session Google en clair : ne le partagez pas,
+et ne recopiez pas ce paquet vers quelqu'un d'autre une fois connecte.
+
+SI QUELQUE CHOSE NE VA PAS
+--------------------------
+Un fichier erreur-demarrage.txt apparait a cote de Plume.exe si le
+programme ne demarre pas. Il contient de quoi diagnostiquer.
+
+Si Plume se ferme tout seul en cours de route, profil/plantages.txt
+retient ce qui s'est passe, avec la date. Envoyez-le, c'est la seule
+trace exploitable.

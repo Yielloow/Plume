@@ -1,0 +1,303 @@
+# -*- coding: utf-8 -*-
+"""
+Construit un paquet autonome de Plume, a donner tel quel.
+
+Le resultat est un dossier que l'on copie ou que l'on compresse : il contient
+Python, les bibliotheques, mpv, Deno et yt-dlp. Rien a installer sur la machine
+d'arrivee, hormis le runtime WebView2, present d'origine sur Windows 11.
+
+Ce qui n'y entre jamais : le dossier `profil/`, qui contient les cookies de
+session du compte Google. Le distribuer reviendrait a donner l'acces au compte.
+
+Usage : python outils\\construire.py
+"""
+import datetime
+import hashlib
+import importlib.util
+import json
+import os
+import shutil
+import subprocess
+import sys
+import zipfile
+from pathlib import Path
+
+RACINE = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(RACINE))
+import core          # noqa: E402  (apres l'ajout de RACINE au chemin)
+
+VERSION = core.VERSION
+# Le depot ou vivent les Releases et la page. Une seule source : le manifeste
+# et le site en decoulent.
+DEPOT = "Plume-nav/plume"
+SORTIE = RACINE.parent / "Plume-paquet"
+TRAVAIL = Path(os.environ.get("TEMP", ".")) / "plume-build"
+
+# Fichiers du projet a embarquer tels quels
+SOURCES = ["navigateur.py", "interface.py", "incrustation.py", "core.py",
+           "plume.py", "barre_taches.py", "osc.lua", "config.json",
+           "README.md"]
+
+INTERDITS = {"profil", "cookies.txt", "diagnostic.txt", "__pycache__"}
+
+
+def trouver(nom, chemins):
+    depuis_path = shutil.which(nom)
+    if depuis_path:
+        return Path(depuis_path)
+    for c in chemins:
+        p = Path(os.path.expandvars(c))
+        if p.exists():
+            return p
+    return None
+
+
+def journal(texte):
+    print("  " + texte)
+
+
+def compiler_ytdlp():
+    """Fabrique un yt-dlp autonome, qui ne depend d'aucun Python installe.
+
+    Celui de pip n'est qu'un amorceur de quelques kilo-octets ; mpv l'appelant
+    par son chemin, il doit fonctionner seul sur la machine d'arrivee.
+
+    En dossier (« onedir ») et non en fichier unique, volontairement. Un exe
+    « onefile » se decompresse dans %TEMP% a chaque lancement puis execute ce
+    qu'il vient d'y ecrire : pour un antivirus, c'est le comportement d'un
+    dropper, et Defender le signale en cheval de Troie (Wacatac.B!ml). Le
+    paquet distribue a declenche cette alerte chez ses destinataires. La forme
+    en dossier n'extrait rien, donc ne presente pas ce comportement.
+
+    Renvoie un dossier contenant yt-dlp.exe, ou un fichier isole en cas de
+    repli sur celui de pip. `core.py` sait chercher les deux formes.
+    """
+    sortie = TRAVAIL / "ytdlp"
+    cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
+           "--onedir", "--console", "--name", "yt-dlp",
+           "--distpath", str(sortie), "--workpath", str(TRAVAIL / "w-ytdlp"),
+           "--specpath", str(TRAVAIL),
+           "--collect-submodules", "yt_dlp",
+           str(RACINE / "outils" / "lanceur_ytdlp.py")]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    dossier = sortie / "yt-dlp"
+    if r.returncode != 0 or not (dossier / "yt-dlp.exe").exists():
+        journal("compilation de yt-dlp echouee, repli sur celui de pip")
+        return trouver("yt-dlp", [
+            str(Path(sys.executable).parent / "Scripts" / "yt-dlp.exe")])
+    return dossier
+
+
+def ecrire_empreintes(dossier):
+    """Liste les empreintes SHA-256 des executables livres.
+
+    Le paquet n'est pas signe, donc un antivirus peut le prendre pour un
+    cheval de Troie. Le destinataire doit pouvoir verifier lui-meme que le
+    fichier recu est bien celui qui a ete construit avant de passer outre.
+    """
+    lignes = ["Empreintes SHA-256 des executables de ce paquet.",
+              "",
+              "Verification, dans PowerShell, depuis ce dossier :",
+              "    Get-FileHash .\\Plume.exe -Algorithm SHA256",
+              "",
+              "Si une empreinte ne correspond pas, le fichier a ete altere",
+              "en chemin : ne le lancez pas.",
+              ""]
+    for chemin in sorted(dossier.rglob("*.exe")):
+        h = hashlib.sha256(chemin.read_bytes()).hexdigest()
+        lignes.append("%s  %s" % (h, chemin.relative_to(dossier)))
+    (dossier / "EMPREINTES.txt").write_text(
+        "\n".join(lignes) + "\n", encoding="utf-8")
+    return len(lignes) - 8
+
+
+def construire():
+    if SORTIE.exists():
+        shutil.rmtree(SORTIE, ignore_errors=True)
+    SORTIE.mkdir(parents=True, exist_ok=True)
+
+    lib_webview = Path(importlib.util.find_spec("webview").origin).parent / "lib"
+
+    print("1. compilation du lanceur et des bibliotheques")
+    cmd = [
+        sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
+        "--noconsole", "--name", "Plume",
+        # UPX comprime l'executable, et cette compression est l'un des
+        # declencheurs les plus surs des heuristiques antivirus : un binaire
+        # qui se decompresse en memoire ressemble a un paquet malveillant.
+        # PyInstaller l'utilise des qu'il le trouve dans le PATH. Il n'y est
+        # pas sur cette machine, mais l'exclure explicitement evite qu'une
+        # installation future ne le reintroduise sans qu'on s'en apercoive.
+        "--noupx",
+        "--icon", str(RACINE / "icone" / "plume.ico"),
+        "--distpath", str(SORTIE), "--workpath", str(TRAVAIL),
+        "--specpath", str(TRAVAIL),
+        # pythonnet et WebView2 ne sont pas detectes automatiquement
+        "--hidden-import", "clr",
+        "--hidden-import", "pythonnet",
+        "--hidden-import", "yt_dlp",
+        "--hidden-import", "streamlink",
+        "--collect-all", "pythonnet",
+        "--collect-all", "clr_loader",
+        "--collect-submodules", "yt_dlp",
+        "--collect-submodules", "streamlink",
+        "--add-data", "%s%s%s" % (lib_webview, os.pathsep, "webview/lib"),
+        str(RACINE / "outils" / "demarrer.py"),
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True,
+                       encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        print("ECHEC de la compilation :")
+        for ligne in (r.stdout + r.stderr).splitlines()[-25:]:
+            print("   " + ligne)
+        return False
+
+    interne = SORTIE / "Plume" / "_internal"
+    dossier = SORTIE / "Plume"
+    journal("compile dans %s" % dossier)
+
+    print("2. copie du code de Plume")
+    for nom in SOURCES:
+        source = RACINE / nom
+        if source.exists():
+            shutil.copy2(source, dossier / nom)
+    shutil.copytree(RACINE / "icone", dossier / "icone", dirs_exist_ok=True)
+    shutil.copy2(RACINE / "outils" / "LISEZ-MOI.txt", dossier / "LISEZ-MOI.txt")
+    journal("%d fichiers, plus la notice" % len(SOURCES))
+
+    print("3. copie des outils externes")
+    mpv = trouver("mpv", [r"%ProgramFiles%\MPV Player\mpv.exe"])
+    deno = None
+    base_deno = Path(os.path.expandvars(
+        r"%LOCALAPPDATA%\Microsoft\WinGet\Packages"))
+    if base_deno.exists():
+        for p in base_deno.rglob("deno.exe"):
+            deno = p
+            break
+    print("   compilation d'un yt-dlp autonome")
+    ytdlp = compiler_ytdlp()
+
+    outils = dossier / "outils-externes"
+    outils.mkdir(exist_ok=True)
+    for nom, chemin in (("mpv.exe", mpv), ("deno.exe", deno)):
+        if chemin and chemin.exists():
+            shutil.copy2(chemin, outils / nom)
+            journal("%-12s %6.1f Mo" % (nom, chemin.stat().st_size / 1048576))
+        else:
+            journal("%-12s ABSENT" % nom)
+
+    if ytdlp and ytdlp.is_dir():
+        shutil.copytree(ytdlp, outils / "yt-dlp", dirs_exist_ok=True)
+        poids = sum(f.stat().st_size for f in (outils / "yt-dlp").rglob("*")
+                    if f.is_file())
+        journal("%-12s %6.1f Mo  (en dossier, pas d'auto-extraction)"
+                % ("yt-dlp/", poids / 1048576))
+    elif ytdlp and ytdlp.exists():
+        shutil.copy2(ytdlp, outils / "yt-dlp.exe")
+        journal("%-12s %6.1f Mo" % ("yt-dlp.exe",
+                                    ytdlp.stat().st_size / 1048576))
+    else:
+        journal("%-12s ABSENT" % "yt-dlp")
+
+    print("4. verification : aucune donnee personnelle")
+    fuites = []
+    for chemin in dossier.rglob("*"):
+        if chemin.name in INTERDITS or "profil" in chemin.parts:
+            fuites.append(chemin)
+    if fuites:
+        print("   DES DONNEES PERSONNELLES SONT PRESENTES, arret :")
+        for f in fuites[:10]:
+            print("     " + str(f))
+        return False
+    journal("aucun profil, aucun cookie")
+
+    print("5. empreintes des executables")
+    n = ecrire_empreintes(dossier)
+    journal("EMPREINTES.txt : %d executables listes" % n)
+
+    print("6. installeur")
+    installeur = construire_installeur(dossier)
+
+    print("7. compression")
+    archive = SORTIE / "Plume.zip"
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        for chemin in dossier.rglob("*"):
+            if chemin.is_file():
+                z.write(chemin, chemin.relative_to(dossier.parent))
+    taille = archive.stat().st_size / 1048576
+    journal("%s  (%.0f Mo)" % (archive, taille))
+
+    print("8. manifeste de mise a jour")
+    ecrire_manifeste(installeur or archive)
+    return True
+
+
+def construire_installeur(dossier):
+    """Compile l'installeur Inno Setup, s'il est installe sur cette machine.
+
+    Absent, on ne fait pas echouer la construction : le zip reste distribuable,
+    et l'installeur n'est qu'un confort de plus.
+    """
+    iscc = trouver("ISCC", [
+        # winget installe Inno Setup par utilisateur : c'est la qu'il atterrit
+        # en pratique, et pas dans Program Files.
+        r"%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe",
+        r"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe",
+        r"%ProgramFiles%\Inno Setup 6\ISCC.exe"])
+    if not iscc:
+        journal("Inno Setup absent : pas d'installeur")
+        journal("  a installer une fois : winget install JRSoftware.InnoSetup")
+        return None
+    r = subprocess.run(
+        [str(iscc), "/DMaVersion=" + VERSION,
+         str(RACINE / "outils" / "plume.iss")],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        for ligne in (r.stdout + r.stderr).splitlines()[-12:]:
+            journal("  " + ligne)
+        journal("ECHEC de l'installeur")
+        return None
+    sortie = SORTIE / ("Plume-%s-installeur.exe" % VERSION)
+    if not sortie.exists():
+        journal("installeur introuvable apres compilation")
+        return None
+    journal("%s  (%.0f Mo)" % (sortie.name, sortie.stat().st_size / 1048576))
+    return sortie
+
+
+def ecrire_manifeste(fichier):
+    """Ecrit docs/version.json : ce que Plume interroge, et ce que le site lit.
+
+    Une seule source pour le numero de version, l'adresse et l'empreinte.
+    Publier une version sans mettre la page a jour devient donc impossible a
+    rater : la page se remplit depuis ce fichier.
+    """
+    h = hashlib.sha256()
+    with open(fichier, "rb") as f:
+        for bloc in iter(lambda: f.read(1 << 20), b""):
+            h.update(bloc)
+    manifeste = {
+        "version": VERSION,
+        # L'adresse definitive n'est connue qu'une fois le depot cree. Elle
+        # est reecrite par outils/publier.py au moment de la publication.
+        "url": "https://github.com/%s/releases/download/v%s/%s"
+               % (DEPOT, VERSION, fichier.name),
+        "sha256": h.hexdigest(),
+        "taille_mo": round(fichier.stat().st_size / 1048576),
+        "date": datetime.date.today().isoformat(),
+        "notes": "",
+    }
+    # `docs` et non `site` : GitHub Pages ne sait servir une branche que
+    # depuis la racine ou depuis ce dossier-la, et mettre le site a la racine
+    # du depot melangerait la page et le code.
+    cible = RACINE / "docs" / "version.json"
+    cible.parent.mkdir(parents=True, exist_ok=True)
+    cible.write_text(json.dumps(manifeste, ensure_ascii=False, indent=2)
+                     + "\n", encoding="utf-8")
+    journal("docs/version.json : %s, %s" % (VERSION, manifeste["sha256"][:16]))
+    journal("  telechargement : %s" % manifeste["url"])
+
+
+if __name__ == "__main__":
+    sys.exit(0 if construire() else 1)

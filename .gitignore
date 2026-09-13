@@ -1,0 +1,35 @@
+# Ce qui ne doit JAMAIS partir sur GitHub.
+#
+# `profil/` contient la session Google en clair — cookies.txt et le profil
+# WebView2 complet, pres d'un gigaoctet. Le publier reviendrait a donner
+# l'acces au compte, et un depot public garde l'historique meme apres
+# suppression du fichier. C'est la premiere ligne de ce fichier pour cette
+# raison.
+profil/
+cookies.txt
+*.log
+diagnostic.txt
+erreur-demarrage.txt
+plantages.txt
+
+# Resultats de construction : ils vivent dans les Releases, pas dans le depot.
+# Le paquet pese 166 Mo et l'installeur 118 Mo, bien au-dela de ce que GitHub
+# accepte dans un depot.
+/../Plume-paquet/
+*.zip
+*-installeur.exe
+# L'ancien lanceur compile, a la racine : 6,5 Mo de binaire que le depot n'a
+# aucune raison de porter. La barre oblique initiale ne vise que la racine,
+# pour ne pas exclure le Plume.exe fabrique dans le paquet.
+/Plume.exe
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Outils embarques : ils sont telecharges a la construction, pas versionnes.
+outils-externes/
+
+# Windows
+Thumbs.db
+desktop.ini
