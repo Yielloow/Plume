@@ -29,7 +29,7 @@ import core          # noqa: E402  (apres l'ajout de RACINE au chemin)
 VERSION = core.VERSION
 # Le depot ou vivent les Releases et la page. Une seule source : le manifeste
 # et le site en decoulent.
-DEPOT = "Plume-nav/plume"
+DEPOT = "Plume-nav/plume-nav"
 SORTIE = RACINE.parent / "Plume-paquet"
 TRAVAIL = Path(os.environ.get("TEMP", ".")) / "plume-build"
 

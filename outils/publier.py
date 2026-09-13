@@ -21,7 +21,7 @@ import core  # noqa: E402
 
 PAQUET = RACINE.parent / "Plume-paquet"
 MANIFESTE = RACINE / "docs" / "version.json"
-DEPOT = "Plume-nav/plume"
+DEPOT = "Plume-nav/plume-nav"
 
 sorties = []
 
