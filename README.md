@@ -1043,6 +1043,40 @@ n'arrivent pas a intervalle regulier, et comme l'animation se cale sur le temps
 ecoule, un battement en retard fait un pas plus grand. Monter la resolution
 d'horloge du processus le corrigerait, au prix de la consommation.
 
+### « Est-ce MOI qui ouvre les liens », et non « un Plume quelconque »
+
+La verification du navigateur par defaut comparait le ProgID retenu par Windows
+a la chaine « PlumeHTML ». Deux defauts, tous deux souleves par une question de
+l'utilisateur.
+
+D'abord, deux copies de Plume lisent le meme registre : celle du dossier de
+travail repondait donc « je suis le navigateur par defaut » alors que les liens
+s'ouvraient dans celle qui est installee. Ensuite, si Windows retenait un autre
+ProgID que celui attendu, la comparaison echouait et le bouton restait alors
+que tout allait bien.
+
+Plume resout maintenant la commande reellement associee au protocole https,
+dans les trois endroits ou le shell la cherche, et regarde si elle designe son
+propre executable. La question posee devient la seule qui compte : est-ce que
+cliquer un lien ouvre ce programme-ci. Le nom du ProgID ne compte plus, la
+commande si.
+
+Le repli, quand la commande est introuvable, reste la comparaison de nom :
+elle vaut mieux que rien.
+
+### Le bouton suit l'etat reel, sans qu'on ait a y penser
+
+La page d'accueil est un fichier, ecrit a certains moments seulement, et le
+bouton y est pose selon l'association lue AU MOMENT DE L'ECRITURE. Choisir
+Plume dans les Parametres pendant qu'elle tourne ne reecrivait donc rien : il
+fallait ouvrir un onglet neuf pour que la page se refasse, ce que personne ne
+devine.
+
+La verification se fait desormais au retour de focus, c'est-a-dire exactement
+quand on revient des Parametres. La page n'est reecrite que si la reponse a
+change : revenir sur la fenetre ne doit pas reconstruire les favoris et les
+groupes de travail cinquante fois par jour.
+
 ### Une annonce arrive apres la page, pas avant
 
 L'annonce d'une mise a jour n'a jamais pu s'afficher au lancement, et personne

@@ -1294,6 +1294,9 @@ class Navigateur(Form):
         self.pubs_bloquees = 0
         # `_maximise` n'est plus un etat que nous tenons : c'est Windows qui
         # agrandit, et lui seul sait ou il en est. Voir la propriete plus bas.
+        # Ce que le systeme repondait la derniere fois qu'on a regarde. Sert
+        # a ne reecrire la page d'accueil que lorsque la reponse change.
+        self._defaut_connu = None
         self._procedure = None          # notre procedure de fenetre
         self._ancienne_procedure = None  # celle de WinForms, que l'on chaine
         self._avant_agrandissement = None
@@ -4607,6 +4610,33 @@ class Navigateur(Form):
     def a_ete_activee(self, envoyeur, args):
         DERNIERE[0] = self
         self.fermer_menu()
+        self.verifier_defaut()
+
+    def verifier_defaut(self):
+        """Reecrit la page d'accueil si Plume vient d'etre choisie, ou ne l'est
+        plus.
+
+        C'est au retour de focus que cela se joue : on revient des Parametres
+        de Windows, et le bouton doit avoir disparu. Sans cela il faut ouvrir
+        un onglet neuf pour que la page se refasse, ce que personne ne devine.
+        """
+        try:
+            maintenant = core.est_navigateur_par_defaut()
+        except Exception:
+            return
+        if maintenant == self._defaut_connu:
+            return
+        self._defaut_connu = maintenant
+        journal("navigateur par defaut : %s" % maintenant)
+        try:
+            self.ecrire_accueil()
+            for onglet in self.onglets:
+                if onglet.url == ACCUEIL:
+                    noyau = onglet.vue.CoreWebView2
+                    if noyau is not None:
+                        noyau.Reload()
+        except Exception as e:
+            journal("rafraichissement de l'accueil : %s" % e)
 
     def nouvelle_fenetre(self, url=None, bornes=None, privee=False,
                          vide=False):

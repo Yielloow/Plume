@@ -882,7 +882,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1094,19 +1094,77 @@ def ouvrir_reglages_defaut():
     return False
 
 
-def est_navigateur_par_defaut():
-    """Vrai si Windows confie deja les liens https a Plume.
+def _exe_de_commande(commande):
+    """Le chemin de l'executable dans une ligne de commande du registre.
 
-    On lit l'association reelle plutot que nos propres cles : declarer Plume
-    ne la rend pas choisie, et afficher « c'est fait » alors que ce n'est pas
-    le cas serait le pire des deux mondes.
+    Les commandes du shell s'ecrivent «"C:\\...\\prog.exe" "%1"». Le chemin
+    entre guillemets se prend tel quel ; sans guillemets, on s'arrete au
+    premier espace, ce qui suffit pour les commandes que Windows y ecrit.
+    """
+    commande = (commande or "").strip()
+    if not commande:
+        return ""
+    if commande.startswith('"'):
+        fin = commande.find('"', 1)
+        return commande[1:fin] if fin > 0 else commande[1:]
+    return commande.split(" ")[0]
+
+
+def _commande_du_progid(progid):
+    """La commande d'ouverture associee a ce ProgID, ou une chaine vide.
+
+    On regarde les trois endroits ou le shell la cherche, dans son ordre :
+    les classes de l'utilisateur d'abord, puis celles de la machine.
+    """
+    if not progid:
+        return ""
+    try:
+        import winreg
+    except ImportError:
+        return ""
+    chemin = r"%s\shell\open\command" % progid
+    for ruche, base in ((winreg.HKEY_CURRENT_USER, r"Software\Classes"),
+                        (winreg.HKEY_CLASSES_ROOT, ""),
+                        (winreg.HKEY_LOCAL_MACHINE, r"Software\Classes")):
+        try:
+            complet = ("%s\\%s" % (base, chemin)) if base else chemin
+            with winreg.OpenKey(ruche, complet) as cle:
+                valeur = winreg.QueryValueEx(cle, "")[0]
+                if valeur:
+                    return valeur
+        except OSError:
+            continue
+    return ""
+
+
+def est_navigateur_par_defaut():
+    """Vrai si les liens https s'ouvrent avec CET executable.
+
+    On ne compare pas un nom de ProgID : deux copies de Plume lisent le meme
+    registre, et celle qui n'est pas installee repondrait oui a tort. On
+    resout la commande reellement associee au protocole, et on regarde si
+    elle designe notre propre programme.
+
+    Annoncer « c'est fait » alors que les liens partent ailleurs serait le
+    pire des deux mondes : la personne cesserait de chercher.
     """
     try:
         import winreg
-        chemin = ("Software\\Microsoft\\Windows\\Shell\\Associations"
-                  "\\UrlAssociations\\https\\UserChoice")
+        chemin = (r"Software\Microsoft\Windows\Shell\Associations"
+                  r"\UrlAssociations\https\UserChoice")
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, chemin) as cle:
-            return winreg.QueryValueEx(cle, "ProgId")[0] == "PlumeHTML"
+            progid = winreg.QueryValueEx(cle, "ProgId")[0]
+    except Exception:
+        return False
+    if not progid:
+        return False
+    exe = _exe_de_commande(_commande_du_progid(progid))
+    if not exe:
+        # Commande introuvable : on retombe sur le nom, qui vaut mieux que rien.
+        return str(progid) == "PlumeHTML"
+    try:
+        return (os.path.normcase(os.path.abspath(exe))
+                == os.path.normcase(os.path.abspath(str(EXECUTABLE))))
     except Exception:
         return False
 
