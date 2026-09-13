@@ -1023,8 +1023,8 @@ qui rend la main entre chaque image.
 
 **Deux etats ne peuvent pas porter le meme nom.** `self._glisse` designait depuis
 toujours le deplacement de la fenetre. En le reutilisant pour le glissement de
-page, le relachement de la souris — qui remet `_glisse` a None a la fin du clic,
-*dans le meme clic* que l'activation — effacait le glissement avant son premier
+page, le relachement de la souris, qui remet `_glisse` a None a la fin du clic,
+*dans le meme clic* que l'activation, effacait le glissement avant son premier
 battement. Les vues restaient ou le montage venait de les poser, l'entrante hors
 cadre : le changement d'onglet paraissait sans aucun effet. C'est desormais
 `_glisse` pour la fenetre et `_glisse_page` pour la page.
@@ -1107,7 +1107,7 @@ d'apparaitre au mauvais format.
 
 ### Un plantage laisse une trace
 
-Une exception dans un rappel WinForms — minuteur, dessin, clic — remontait dans
+Une exception dans un rappel WinForms, minuteur, dessin, clic, remontait dans
 le vide : la fenetre disparaissait sans un mot. Le journal ne servait a rien,
 puisqu'il fallait avoir pose `PLUME_DEBUG` **avant**. `Application.ThreadException`
 et `AppDomain.UnhandledException` sont maintenant interceptes, et la pile

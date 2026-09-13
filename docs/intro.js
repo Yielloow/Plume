@@ -1,8 +1,8 @@
 // L'intro de Plume, celle du lancement du navigateur, rejouee dans la page.
 //
 // Portage direct de interface.py (peindre_intro) : memes couleurs, memes
-// proportions, meme minutage. Ce qui change est le support — un canvas plutot
-// que GDI+ — et deux details que le navigateur rend gratuits : le melange
+// proportions, meme minutage. Ce qui change est le support, un canvas plutot
+// que GDI+, et deux details que le navigateur rend gratuits : le melange
 // additif existe ici, mais on garde l'empilement de couches pour que le halo
 // ait exactement le meme rendu que dans l'application.
 //
@@ -141,7 +141,9 @@
     // enseigne.
     var S = Math.max(34, Math.min(92, Math.min(largeur * 0.12, hauteur * 0.2)));
     c.font = "600 " + S + "px 'Segoe UI', -apple-system, system-ui, sans-serif";
-    c.textBaseline = "top";
+    // Ligne de base et non sommet de boite : c'est la seule reference stable
+    // d'une police a l'autre.
+    c.textBaseline = "alphabetic";
 
     var mot = "Plume";
     var lMot = c.measureText(mot).width;
@@ -152,7 +154,19 @@
     var x = (largeur - total) / 2;
     var milieu = hauteur / 2;
     var x0Etincelle = x + rayonEtincelle;
-    var hautTexte = milieu - S * 0.74;
+    // Le mot est cale sur ses vraies limites d'encre, pas sur la boite de la
+    // police. GDI+ et le navigateur ne mesurent pas pareil : reprendre tel
+    // quel le decalage de interface.py posait le mot trop haut, nettement
+    // au-dessus du centre de l'etincelle. Ici son milieu visuel tombe sur
+    // celui de l'etincelle, quelle que soit la police qui sert finalement.
+    var m = c.measureText(mot);
+    var monte = m.actualBoundingBoxAscent;
+    var descend = m.actualBoundingBoxDescent;
+    if (!(monte > 0)) {          // navigateur sans ces mesures : repli
+      monte = S * 0.72;
+      descend = S * 0.21;
+    }
+    var ligneTexte = milieu + (monte - descend) / 2;
     // Sous les jambages, pas dessus : le point et le trait partagent la meme
     // ligne, c'est ce qui relie les deux bouts du logotype.
     var yTrait = milieu + S * 0.92;
@@ -182,7 +196,7 @@
       if (pl > 0) {
         var al = adouci(pl);
         c.fillStyle = rgba(TEXTE, al);
-        c.fillText(mot[i], curseur, hautTexte + 16 * (1 - al));
+        c.fillText(mot[i], curseur, ligneTexte + 16 * (1 - al));
       }
       curseur = x + c.measureText(mot.slice(0, i + 1)).width;
     }

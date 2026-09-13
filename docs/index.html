@@ -1,13 +1,13 @@
 <!doctype html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plume — un navigateur qui joue les vidéos avec mpv</title>
-<meta name="description" content="Un navigateur léger qui remplace le lecteur des sites par mpv : moins de mémoire, pas de publicité, l'image reste dans la page.">
+<title>Plume, a browser that plays video with mpv</title>
+<meta name="description" content="A light browser that replaces each site's video player with mpv: less memory, no ads, and the picture stays in the page.">
 <link rel="icon" href="plume.ico">
 <meta property="og:title" content="Plume">
-<meta property="og:description" content="Un navigateur qui joue les vidéos avec mpv au lieu du lecteur du site.">
+<meta property="og:description" content="A browser that plays video with mpv instead of the site's own player.">
 <style>
 :root {
   --fond: #12131a;
@@ -42,7 +42,9 @@ body {
 #page.visible { opacity: 1; }
 body.attend { overflow: hidden; }
 
-.enveloppe { max-width: 780px; margin: 0 auto; padding: 0 24px 96px; }
+.enveloppe {
+  max-width: 780px; margin: 0 auto; padding: 0 24px 96px; position: relative;
+}
 
 header { padding: 84px 0 44px; }
 .logotype { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
@@ -74,6 +76,20 @@ a { color: var(--accent-pale); }
 }
 .sous-bouton { color: var(--texte2); font-size: 14px; margin-top: 14px; }
 
+/* Le choix de langue : discret, en haut a droite, hors du chemin de lecture. */
+.langues {
+  position: absolute; top: 26px; right: 24px; display: flex; gap: 2px;
+  font-size: 13px;
+}
+.langues button {
+  background: none; border: 1px solid transparent; color: var(--texte2);
+  padding: 5px 10px; border-radius: 7px; cursor: pointer; font: inherit;
+}
+.langues button:hover { color: var(--texte); }
+.langues button[aria-pressed="true"] {
+  color: var(--texte); border-color: var(--bord); background: var(--fond2);
+}
+
 code, .empreinte {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 13px;
@@ -91,9 +107,7 @@ code { color: var(--accent-pale); }
 .avertissement h2 { margin-top: 0; font-size: 20px; }
 
 .traits { list-style: none; padding: 0; margin: 0; }
-.traits li {
-  border-top: 1px solid var(--bord); padding: 16px 0;
-}
+.traits li { border-top: 1px solid var(--bord); padding: 16px 0; }
 .traits b { display: block; font-weight: 600; margin-bottom: 2px; }
 .traits span { color: var(--texte2); }
 
@@ -115,7 +129,8 @@ footer {
 @media (max-width: 560px) {
   h1 { font-size: 46px; }
   .accroche { font-size: 18px; }
-  header { padding: 56px 0 32px; }
+  header { padding: 72px 0 32px; }
+  .langues { top: 16px; right: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -130,6 +145,11 @@ footer {
 <div id="page">
 <div class="enveloppe">
 
+<nav class="langues" aria-label="Language">
+  <button type="button" data-langue="en" aria-pressed="true">EN</button>
+  <button type="button" data-langue="fr" aria-pressed="false">FR</button>
+</nav>
+
 <header>
   <div class="logotype">
     <!-- L'etoile a quatre branches de l'icone, cotes concaves. -->
@@ -139,75 +159,43 @@ footer {
     </svg>
     <h1>Plume<span class="point">.</span></h1>
   </div>
-  <p class="accroche">Un navigateur qui joue les vidéos avec mpv au lieu du
-  lecteur du site : moins de mémoire, pas de publicité, et l'image reste dans
-  la page.</p>
-  <a class="bouton" id="lien-telechargement"
-     href="https://github.com/Yielloow/Plume/releases/latest">
-     Télécharger pour Windows</a>
-  <p class="sous-bouton">Windows 10 (1809) ou 11 &middot;
-  <span id="taille">environ 120 Mo</span> &middot;
-  rien à installer en plus</p>
+  <p class="accroche" data-t="accroche"></p>
+  <a class="bouton" id="lien-telechargement" data-t="telecharger"
+     href="https://github.com/Yielloow/Plume/releases/latest"></a>
+  <p class="sous-bouton"><span data-t="exigences"></span>
+  <span id="taille"></span> <span data-t="rien-installer"></span></p>
 </header>
 
 <div class="avertissement">
-  <h2>Windows va se plaindre. C'est normal, et voici pourquoi</h2>
-  <p>Plume n'est signée par aucun certificat. Un certificat de signature coûte
-  plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour
-  quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.</p>
+  <h2 data-t="avert-titre"></h2>
+  <p data-t="avert-intro"></p>
 
-  <h3>Fenêtre bleue, « Windows a protégé votre ordinateur »</h3>
-  <p>C'est un avertissement de réputation, pas une détection. Cliquer sur
-  <b>Informations complémentaires</b>, puis <b>Exécuter quand même</b>.</p>
+  <h3 data-t="avert-bleu-titre"></h3>
+  <p data-t="avert-bleu"></p>
 
-  <h3>Alerte rouge parlant d'un cheval de Troie</h3>
-  <p>Souvent nommé <code>Wacatac</code> ou <code>Bearfoos</code>, avec
-  <code>!ml</code> à la fin. C'est un faux positif connu des programmes Python
-  compilés, et le <code>!ml</code> signifie justement que le verdict vient
-  d'une heuristique et non d'une signature.</p>
-  <p><b>Ne passez pas outre sur parole.</b> Vérifiez que le fichier reçu est
-  bien celui qui a été publié, en comparant son empreinte à celle-ci :</p>
-  <code class="empreinte" id="empreinte">Get-FileHash .\Plume-installeur.exe -Algorithm SHA256</code>
-  <p>Si elle correspond, le fichier n'a pas été altéré en chemin. Sinon, ne
-  lancez rien.</p>
-  <p>N'ajoutez pas d'exclusion antivirus permanente pour faire taire l'alerte :
-  on prend vite l'habitude de désactiver des protections, et c'est le réflexe
-  qu'il vaut mieux ne pas acquérir.</p>
+  <h3 data-t="avert-rouge-titre"></h3>
+  <p data-t="avert-rouge"></p>
+  <p data-t="avert-verifier"></p>
+  <code class="empreinte" id="empreinte"></code>
+  <p data-t="avert-conclusion"></p>
+  <p data-t="avert-exclusion"></p>
 </div>
 
-<h2>Ce que Plume fait</h2>
+<h2 data-t="traits-titre"></h2>
 <ul class="traits">
-  <li><b>mpv à la place du lecteur du site</b>
-  <span>L'image reste exactement où elle était dans la page, mais c'est mpv qui
-  décode : nettement moins de mémoire, et aucune publicité vidéo.</span></li>
-  <li><b>Vos vidéos reprennent où vous les avez laissées</b>
-  <span>Fermez au milieu d'une vidéo : en rouvrant, elle repart au bon endroit,
-  sans rien vous demander.</span></li>
-  <li><b>Les onglets que vous ne regardez pas se mettent en veille</b>
-  <span>Ils rendent la mémoire, et y revenir les retrouve intacts — formulaire
-  à moitié rempli compris.</span></li>
-  <li><b>Des groupes de travail</b>
-  <span>Clic droit sur un onglet pour le ranger dans un groupe ; un clic sur la
-  page d'accueil rouvre tout le groupe.</span></li>
-  <li><b>Une fenêtre privée</b>
-  <span>Ni historique, ni cookies, ni onglets gardés. À la fermeture, tout
-  part.</span></li>
-  <li><b>Tout est inclus</b>
-  <span>Python, mpv, Deno et yt-dlp sont dans le paquet. Seul prérequis,
-  présent d'origine sur Windows 11 : le runtime WebView2.</span></li>
+  <li><b data-t="t1"></b><span data-t="t1d"></span></li>
+  <li><b data-t="t2"></b><span data-t="t2d"></span></li>
+  <li><b data-t="t3"></b><span data-t="t3d"></span></li>
+  <li><b data-t="t4"></b><span data-t="t4d"></span></li>
+  <li><b data-t="t5"></b><span data-t="t5d"></span></li>
+  <li><b data-t="t6"></b><span data-t="t6d"></span></li>
 </ul>
 
-<h2>Vie privée</h2>
-<p>Plume ne renvoie rien nulle part. L'historique, les favoris, les cookies et
-les positions de lecture sont des fichiers dans le sous-dossier
-<code>profil/</code>, sur votre machine ; les supprimer suffit à tout oublier.
-La seule requête que Plume émet d'elle-même est une vérification de version,
-une fois par jour, vers cette page — et elle se coupe en vidant
-<code>manifeste_maj</code> dans <code>config.json</code>.</p>
+<h2 data-t="vie-privee-titre"></h2>
+<p data-t="vie-privee"></p>
 
 <footer>
-  <p>Plume est un projet personnel, distribué tel quel, sans garantie.
-  <span id="version"></span></p>
+  <p><span data-t="pied"></span> <span id="version"></span></p>
 </footer>
 
 </div>
@@ -215,31 +203,158 @@ une fois par jour, vers cette page — et elle se coupe en vidant
 
 <script src="intro.js"></script>
 <script>
-// La page se remplit depuis version.json : une seule source pour le numero de
-// version, l'adresse de telechargement et l'empreinte. Publier une version
-// sans toucher a cette page devient donc impossible a rater.
+// --- Les deux langues -----------------------------------------------------
+// L'anglais par defaut, le francais si le navigateur est en francais. Le choix
+// manuel l'emporte sur la detection et tient le temps de la session : quelqu'un
+// dont le navigateur est en anglais mais qui prefere lire en francais ne doit
+// pas avoir a le redemander a chaque page.
+var TEXTES = {
+  en: {
+    titre: "Plume, a browser that plays video with mpv",
+    accroche: "A browser that plays video with mpv instead of the site's own player: less memory, no ads, and the picture stays right where it was in the page.",
+    telecharger: "Download for Windows",
+    exigences: "Windows 10 (1809) or 11 ·",
+    "rien-installer": "· nothing else to install",
+    "avert-titre": "Windows will complain. That is expected, and here is why",
+    "avert-intro": "Plume is not signed by any certificate. A code signing certificate costs several hundred euros a year, and Plume is a free project made for a handful of people. So Windows does not know its publisher, and says so.",
+    "avert-bleu-titre": "Blue window, “Windows protected your PC”",
+    "avert-bleu": "That is a reputation warning, not a detection. Click More info, then Run anyway.",
+    "avert-rouge-titre": "Red alert about a trojan",
+    "avert-rouge": "Often named Wacatac or Bearfoos, ending in !ml. This is a known false positive on compiled Python programs, and the !ml suffix means precisely that the verdict comes from a heuristic rather than a signature.",
+    "avert-verifier": "Do not take our word for it. First check that the file you received is the one that was published, by comparing its hash with this one:",
+    "avert-conclusion": "If it matches, the file was not altered on the way. If it does not, run nothing.",
+    "avert-exclusion": "Do not add a permanent antivirus exclusion to silence the alert: turning protections off is a habit that forms quickly, and it is the wrong one to pick up.",
+    "traits-titre": "What Plume does",
+    t1: "mpv instead of the site's player",
+    t1d: "The picture stays exactly where it was in the page, but mpv does the decoding: far less memory, and no video ads.",
+    t2: "Your videos resume where you left them",
+    t2d: "Close in the middle of a video: when you reopen it, it starts again at the right place, without asking.",
+    t3: "Tabs you are not watching go to sleep",
+    t3d: "They give their memory back, and coming back to one finds it intact, half-filled form included.",
+    t4: "Work groups",
+    t4d: "Right-click a tab to file it into a group; one click on the home page reopens the whole group.",
+    t5: "A private window",
+    t5d: "No history, no cookies, no tabs kept. When it closes, everything goes.",
+    t6: "Everything is included",
+    t6d: "Python, mpv, Deno and yt-dlp are in the package. The only prerequisite, shipped with Windows 11: the WebView2 runtime.",
+    "vie-privee-titre": "Privacy",
+    "vie-privee": "Plume sends nothing anywhere. History, bookmarks, cookies and playback positions are files in the profil/ subfolder, on your own machine; deleting them is enough to forget everything. The only request Plume makes on its own is a version check, once a day, to this page, and it stops entirely if you empty manifeste_maj in config.json.",
+    pied: "Plume is a personal project, distributed as is, without warranty.",
+    version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
+    taille: function (mo) { return mo + " MB ·"; },
+    taille_defaut: "about 120 MB ·"
+  },
+  fr: {
+    titre: "Plume, un navigateur qui joue les vidéos avec mpv",
+    accroche: "Un navigateur qui joue les vidéos avec mpv au lieu du lecteur du site : moins de mémoire, pas de publicité, et l'image reste là où elle était dans la page.",
+    telecharger: "Télécharger pour Windows",
+    exigences: "Windows 10 (1809) ou 11 ·",
+    "rien-installer": "· rien à installer en plus",
+    "avert-titre": "Windows va se plaindre. C'est normal, et voici pourquoi",
+    "avert-intro": "Plume n'est signée par aucun certificat. Un certificat de signature coûte plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.",
+    "avert-bleu-titre": "Fenêtre bleue, « Windows a protégé votre ordinateur »",
+    "avert-bleu": "C'est un avertissement de réputation, pas une détection. Cliquer sur Informations complémentaires, puis Exécuter quand même.",
+    "avert-rouge-titre": "Alerte rouge parlant d'un cheval de Troie",
+    "avert-rouge": "Souvent nommé Wacatac ou Bearfoos, avec !ml à la fin. C'est un faux positif connu des programmes Python compilés, et le !ml signifie justement que le verdict vient d'une heuristique et non d'une signature.",
+    "avert-verifier": "Ne passez pas outre sur parole. Vérifiez que le fichier reçu est bien celui qui a été publié, en comparant son empreinte à celle-ci :",
+    "avert-conclusion": "Si elle correspond, le fichier n'a pas été altéré en chemin. Sinon, ne lancez rien.",
+    "avert-exclusion": "N'ajoutez pas d'exclusion antivirus permanente pour faire taire l'alerte : on prend vite l'habitude de désactiver des protections, et c'est le réflexe qu'il vaut mieux ne pas acquérir.",
+    "traits-titre": "Ce que Plume fait",
+    t1: "mpv à la place du lecteur du site",
+    t1d: "L'image reste exactement où elle était dans la page, mais c'est mpv qui décode : nettement moins de mémoire, et aucune publicité vidéo.",
+    t2: "Vos vidéos reprennent où vous les avez laissées",
+    t2d: "Fermez au milieu d'une vidéo : en rouvrant, elle repart au bon endroit, sans rien vous demander.",
+    t3: "Les onglets que vous ne regardez pas se mettent en veille",
+    t3d: "Ils rendent la mémoire, et y revenir les retrouve intacts, formulaire à moitié rempli compris.",
+    t4: "Des groupes de travail",
+    t4d: "Clic droit sur un onglet pour le ranger dans un groupe ; un clic sur la page d'accueil rouvre tout le groupe.",
+    t5: "Une fenêtre privée",
+    t5d: "Ni historique, ni cookies, ni onglets gardés. À la fermeture, tout part.",
+    t6: "Tout est inclus",
+    t6d: "Python, mpv, Deno et yt-dlp sont dans le paquet. Seul prérequis, présent d'origine sur Windows 11 : le runtime WebView2.",
+    "vie-privee-titre": "Vie privée",
+    "vie-privee": "Plume ne renvoie rien nulle part. L'historique, les favoris, les cookies et les positions de lecture sont des fichiers dans le sous-dossier profil/, sur votre machine ; les supprimer suffit à tout oublier. La seule requête que Plume émet d'elle-même est une vérification de version, une fois par jour, vers cette page, et elle se coupe en vidant manifeste_maj dans config.json.",
+    pied: "Plume est un projet personnel, distribué tel quel, sans garantie.",
+    version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
+    taille: function (mo) { return mo + " Mo ·"; },
+    taille_defaut: "environ 120 Mo ·"
+  }
+};
+
+var manifeste = null;
+var langue = "en";
+
+function appliquer(code) {
+  langue = TEXTES[code] ? code : "en";
+  var t = TEXTES[langue];
+  document.documentElement.lang = langue;
+  document.title = t.titre;
+  var noeuds = document.querySelectorAll("[data-t]");
+  for (var i = 0; i < noeuds.length; i++) {
+    var cle = noeuds[i].getAttribute("data-t");
+    if (typeof t[cle] === "string") { noeuds[i].textContent = t[cle]; }
+  }
+  var boutons = document.querySelectorAll(".langues button");
+  for (var j = 0; j < boutons.length; j++) {
+    boutons[j].setAttribute("aria-pressed",
+      boutons[j].getAttribute("data-langue") === langue ? "true" : "false");
+  }
+  remplir();
+}
+
+// Le manifeste alimente la page : une seule source pour le numero de version,
+// l'adresse de telechargement, la taille et l'empreinte. Publier une version
+// sans mettre la page a jour devient donc impossible a rater.
+function remplir() {
+  var t = TEXTES[langue];
+  document.getElementById("taille").textContent =
+    manifeste && manifeste.taille_mo
+      ? t.taille(manifeste.taille_mo) : t.taille_defaut;
+  if (!manifeste) { return; }
+  if (manifeste.url) {
+    document.getElementById("lien-telechargement").href = manifeste.url;
+  }
+  if (manifeste.sha256) {
+    var nom = manifeste.url
+      ? manifeste.url.split("/").pop() : "Plume-installeur.exe";
+    document.getElementById("empreinte").textContent =
+      "Get-FileHash .\\" + nom + " -Algorithm SHA256\n\n" + manifeste.sha256;
+  }
+  if (manifeste.version) {
+    document.getElementById("version").textContent =
+      t.version(manifeste.version, manifeste.date);
+  }
+}
+
+(function () {
+  var choisie = null;
+  try { choisie = sessionStorage.getItem("langue"); } catch (e) {}
+  if (!choisie) {
+    var nav = (navigator.languages && navigator.languages[0])
+      || navigator.language || "en";
+    choisie = /^fr\b/i.test(nav) ? "fr" : "en";
+  }
+  appliquer(choisie);
+
+  var boutons = document.querySelectorAll(".langues button");
+  for (var i = 0; i < boutons.length; i++) {
+    boutons[i].addEventListener("click", function () {
+      var code = this.getAttribute("data-langue");
+      try { sessionStorage.setItem("langue", code); } catch (e) {}
+      appliquer(code);
+    });
+  }
+})();
+
 fetch("version.json", { cache: "no-store" })
   .then(function (r) { return r.json(); })
-  .then(function (m) {
-    if (m.url) { document.getElementById("lien-telechargement").href = m.url; }
-    if (m.sha256) {
-      var nom = m.url ? m.url.split("/").pop() : "Plume-installeur.exe";
-      document.getElementById("empreinte").textContent =
-        "Get-FileHash .\\" + nom + " -Algorithm SHA256\n\n" + m.sha256;
-    }
-    if (m.taille_mo) {
-      document.getElementById("taille").textContent = m.taille_mo + " Mo";
-    }
-    if (m.version) {
-      document.getElementById("version").textContent =
-        "Version " + m.version + (m.date ? ", " + m.date : "") + ".";
-    }
-  })
+  .then(function (m) { manifeste = m; remplir(); })
   .catch(function () { /* la page reste lisible sans le manifeste */ });
 
-// L'intro ne se joue qu'a l'arrivee. Revenir en arriere, ou recharger pour
-// relire un paragraphe, ne doit pas reimposer deux secondes et demie : une
-// intro qu'on subit deux fois devient une porte a pousser.
+// --- L'intro --------------------------------------------------------------
+// Elle ne se joue qu'a l'arrivee. Revenir en arriere, ou recharger pour relire
+// un paragraphe, ne doit pas reimposer deux secondes et demie : une intro
+// qu'on subit deux fois devient une porte a pousser.
 (function () {
   var toile = document.getElementById("intro");
   var page = document.getElementById("page");
@@ -253,10 +368,7 @@ fetch("version.json", { cache: "no-store" })
 
   var dejaVue = false;
   try { dejaVue = sessionStorage.getItem("intro-vue") === "1"; } catch (e) {}
-  if (dejaVue || !window.IntroPlume) {
-    reveler();
-    return;
-  }
+  if (dejaVue || !window.IntroPlume) { reveler(); return; }
   try { sessionStorage.setItem("intro-vue", "1"); } catch (e) {}
   window.IntroPlume.jouer(toile, reveler);
 })();

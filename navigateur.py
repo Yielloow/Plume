@@ -166,7 +166,7 @@ GA_ROOT = 2
 
 # Mesure faite : pythonnet ne redirige PAS vers Python les methodes
 # virtuelles protegees d'une classe .NET derivee. `Navigateur.WndProc` n'a
-# donc jamais ete appele une seule fois — ni les bords saisissables, ni rien
+# donc jamais ete appele une seule fois, ni les bords saisissables, ni rien
 # de ce qui en dependait n'a jamais fonctionne. On installe donc notre propre
 # procedure de fenetre, par la voie native, et on chaine vers l'ancienne.
 TYPE_PROCEDURE = ctypes.WINFUNCTYPE(ctypes.c_longlong, ctypes.c_void_p,
@@ -1933,7 +1933,7 @@ class Navigateur(Form):
         #
         # Ici la place est une fonction pure de l'abscisse : un meme point
         # designe toujours la meme place. La frontiere tombe a mi-chemin entre
-        # deux centres, ce qui donne le comportement attendu — un onglet passe
+        # deux centres, ce qui donne le comportement attendu, un onglet passe
         # devant son voisin quand il a franchi la moitie du chemin.
         largeur = self.largeur_onglet()
         pas = largeur + 2.0
