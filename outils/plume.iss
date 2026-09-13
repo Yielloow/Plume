@@ -63,7 +63,19 @@ Name: "bureau"; Description: "Creer un raccourci sur le Bureau"; \
 ; Tout le dossier construit par outils\construire.py, sauf le profil, qui
 ; n'y est de toute facon jamais copie.
 Source: "..\..\Plume-paquet\Plume\*"; DestDir: "{app}"; \
+    Excludes: "config.json"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+
+; La configuration n'est posee QUE si elle n'existe pas. Sans cette exception,
+; une mise a jour ecrasait le volume, la langue et le moteur de recherche
+; choisis par la personne, et les remettait aux valeurs d'usine. Mesure faite
+; en installant deux fois de suite.
+;
+; Garder l'ancien fichier ne prive de rien : `core.charger_config` fusionne ce
+; qu'il lit avec les valeurs par defaut, donc une cle ajoutee par une version
+; suivante arrive quand meme.
+Source: "..\..\Plume-paquet\Plume\config.json"; DestDir: "{app}"; \
+    Flags: onlyifdoesntexist
 
 [Registry]
 ; Declaration de Plume comme navigateur possible, sous HKCU : l'installation
