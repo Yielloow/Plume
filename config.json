@@ -12,7 +12,7 @@
   "glissement_onglets": true,
   "volume": 100,
   "muet": false,
-  "langue": "auto",
+  "langue": "fr",
   "manifeste_maj": "https://yielloow.github.io/Plume/version.json",
   "solveur_distant": true
 }

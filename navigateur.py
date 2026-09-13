@@ -4124,10 +4124,36 @@ class Navigateur(Form):
         if not manifeste:
             return
         texte = core.t("maj_disponible", manifeste["version"])
+        # Une page ne sera prete que dans quelques secondes. On patiente
+        # jusqu'a une minute, puis on renonce : passe ce delai, l'annonce
+        # arriverait alors que la personne est deja partie faire autre chose,
+        # et un bandeau surgi de nulle part vaut moins que pas de bandeau.
+        for _ in range(60):
+            porte = []
+            try:
+                self.Invoke(Action(
+                    lambda: porte.append(self.annoncer_maj(texte))))
+            except Exception as e:
+                return journal("annonce de mise a jour : %s" % e)
+            if porte and porte[0]:
+                return
+            time.sleep(1.0)
+        journal("mise a jour %s : aucune page prete pour l'annoncer"
+                % manifeste["version"])
+
+    def annoncer_maj(self, texte):
+        """Pose le bandeau si une page peut le porter. Faux sinon.
+
+        A appeler SUR LE FIL DE LA FENETRE : `CoreWebView2` ne se lit pas
+        ailleurs.
+        """
         try:
-            self.Invoke(Action(lambda: self.signaler(texte, erreur=False)))
-        except Exception as e:
-            journal("annonce de mise a jour : %s" % e)
+            if not self.actif or self.actif.vue.CoreWebView2 is None:
+                return False
+        except Exception:
+            return False
+        self.signaler(texte, erreur=False)
+        return True
 
     def signaler(self, texte, erreur=True):
         """Affiche un bandeau dans la page active.

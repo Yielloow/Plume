@@ -1043,6 +1043,30 @@ n'arrivent pas a intervalle regulier, et comme l'animation se cale sur le temps
 ecoule, un battement en retard fait un pas plus grand. Monter la resolution
 d'horloge du processus le corrigerait, au prix de la consommation.
 
+### Une annonce arrive apres la page, pas avant
+
+L'annonce d'une mise a jour n'a jamais pu s'afficher au lancement, et personne
+ne s'en est apercu avant de l'essayer pour de vrai.
+
+La verification part sur un fil des l'ouverture de la premiere fenetre. La
+requete reseau prend quelques centaines de millisecondes ; l'initialisation de
+WebView2, plusieurs secondes. Le bandeau arrivait donc avant qu'une page
+existe, et `signaler` le jetait en silence faute de `CoreWebView2`. Rien ne
+signalait l'echec : ni journal, ni exception, ni bandeau.
+
+L'annonce reessaie maintenant chaque seconde jusqu'a ce qu'une page puisse la
+porter, pendant une minute au plus. Passe ce delai on renonce : elle arriverait
+alors que la personne est partie faire autre chose, et un bandeau surgi de
+nulle part vaut moins que pas de bandeau.
+
+La lecture de `CoreWebView2` se fait par `Invoke`, sur le fil de la fenetre.
+L'affinite de fil de ce controle ne se negocie pas, et l'interroger depuis le
+fil de guet echouerait ou figerait l'application.
+
+**La lecon depasse la mise a jour** : tout ce qui parle a une page depuis un
+fil de fond doit verifier qu'une page ecoute, et reessayer, plutot que de tirer
+une fois dans le vide.
+
 ### Le volume se retient, et le premier plan ne se gagne pas toujours
 
 **Le volume est un reglage de personne, pas de video.** Il vit donc dans
