@@ -882,7 +882,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1311,3 +1311,93 @@ def volume_retenu():
     except (TypeError, ValueError):
         volume = 100
     return volume, bool(CONFIG.get("muet"))
+
+
+# --------------------------------------------------------------------------
+# Telechargement d'une mise a jour
+# --------------------------------------------------------------------------
+TAILLE_MAX_MAJ = 400 * 1024 * 1024     # octets, garde-fou grossier
+
+
+def telecharger_mise_a_jour(manifeste, dossier=None, progression=None):
+    """Recupere l'installeur annonce, et ne le rend que s'il est le bon.
+
+    `progression` est appele avec (recus, total) pendant la descente, pour que
+    l'interface puisse dire ou on en est sans que cette fonction connaisse
+    l'interface.
+
+    Renvoie le chemin du fichier verifie, ou None. En cas d'ecart d'empreinte,
+    le fichier est efface : un installeur douteux ne doit pas rester a trainer
+    sur le disque, ou quelqu'un finirait par le lancer.
+    """
+    if not manifeste:
+        return None
+    url = str(manifeste.get("url") or "")
+    attendue = str(manifeste.get("sha256") or "").lower()
+    if not url.startswith("https://") or len(attendue) != 64:
+        return None
+
+    dossier = Path(dossier) if dossier else (APP_DIR / "profil")
+    try:
+        dossier.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    nom = url.split("/")[-1] or "Plume-installeur.exe"
+    # Le nom vient du reseau : on n'en garde que ce qui ne peut pas designer
+    # un autre endroit du disque.
+    nom = "".join(c for c in nom if c.isalnum() or c in "-_.")[:80]
+    if not nom.lower().endswith(".exe"):
+        nom += ".exe"
+    cible = dossier / nom
+
+    import hashlib
+    import urllib.request
+    h = hashlib.sha256()
+    recus = 0
+    try:
+        with urllib.request.urlopen(url, timeout=30) as reponse:
+            total = int(reponse.headers.get("Content-Length") or 0)
+            if total and total > TAILLE_MAX_MAJ:
+                return None
+            with open(cible, "wb") as f:
+                while True:
+                    bloc = reponse.read(256 * 1024)
+                    if not bloc:
+                        break
+                    recus += len(bloc)
+                    if recus > TAILLE_MAX_MAJ:
+                        raise ValueError("fichier trop gros")
+                    h.update(bloc)
+                    f.write(bloc)
+                    if progression:
+                        try:
+                            progression(recus, total)
+                        except Exception:
+                            pass
+    except Exception:
+        try:
+            cible.unlink()
+        except OSError:
+            pass
+        return None
+
+    if h.hexdigest().lower() != attendue:
+        try:
+            cible.unlink()
+        except OSError:
+            pass
+        return None
+    return cible
+
+
+def dossier_installe():
+    """Le dossier ou Plume est installee, pour y reposer la mise a jour.
+
+    C'est celui de l'executable en cours. L'installeur le recevra par /DIR :
+    sans cela il proposerait son emplacement par defaut, et une mise a jour
+    creerait une seconde installation ailleurs.
+    """
+    try:
+        return str(Path(EXECUTABLE).parent)
+    except Exception:
+        return str(APP_DIR)

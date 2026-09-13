@@ -67,8 +67,15 @@ TEXTES = {
         "lecteur_aucune_piste": "Aucune piste disponible",
         "lecteur_passage": "Passage en ",
         # --- mises a jour
-        "maj_disponible": "Plume %s est disponible. Page de telechargement "
-                          "dans les favoris.",
+        "maj_disponible": "Plume %s est disponible.",
+        "maj_bouton": "Mettre a jour",
+        "maj_telechargement": "Telechargement de la mise a jour... %d %%",
+        "maj_bientot": "Mise a jour dans %d secondes.",
+        "maj_annuler": "Annuler",
+        "maj_annulee": "Mise a jour annulee.",
+        "maj_lancement": "Installation en cours, Plume va se rouvrir.",
+        "maj_echec": "La mise a jour n'a pas pu etre verifiee. Rien n'a ete "
+                     "installe : passez par le site.",
     },
     "en": {
         "telecharge": "Downloaded: %s  (in %s)",
@@ -114,8 +121,15 @@ TEXTES = {
         "lecteur_piste": "track ",
         "lecteur_aucune_piste": "No track available",
         "lecteur_passage": "Switching to ",
-        "maj_disponible": "Plume %s is available. Download page is in your "
-                          "bookmarks.",
+        "maj_disponible": "Plume %s is available.",
+        "maj_bouton": "Update",
+        "maj_telechargement": "Downloading the update... %d %%",
+        "maj_bientot": "Updating in %d seconds.",
+        "maj_annuler": "Cancel",
+        "maj_annulee": "Update cancelled.",
+        "maj_lancement": "Installing, Plume will reopen.",
+        "maj_echec": "The update could not be verified. Nothing was "
+                     "installed: please use the website.",
     },
 }
 

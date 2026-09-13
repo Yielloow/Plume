@@ -157,6 +157,19 @@ Une fois choisie, le bouton vous le dit et ne sert plus a rien. Il lit
 l'association reelle du systeme, pas ses propres reglages : il ne vous
 annoncera jamais un changement qui n'a pas eu lieu.
 
+LES MISES A JOUR
+----------------
+Quand une nouvelle version existe, Plume vous le dit par un bandeau, avec
+un bouton « Mettre a jour ». Un clic suffit : elle telecharge, verifie que
+le fichier recu est bien celui qui a ete publie, previent par un compte a
+rebours que vous pouvez annuler, puis installe et se rouvre.
+
+Vos onglets, vos favoris et vos reglages sont conserves.
+
+Si la verification echoue, RIEN n'est installe et Plume vous le dit : passez
+alors par le site. Elle ne verifie qu'une fois par jour, et ne telecharge
+jamais sans que vous ayez clique.
+
 LE SON EST RETENU
 -----------------
 Le volume que vous reglez vaut pour les videos suivantes, et pour vos

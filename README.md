@@ -1064,6 +1064,44 @@ commande si.
 Le repli, quand la commande est introuvable, reste la comparaison de nom :
 elle vaut mieux que rien.
 
+### La mise a jour en un bouton, et ce qu'elle refuse
+
+Le bandeau porte un bouton. Un clic, et Plume telecharge l'installeur annonce,
+verifie son empreinte, previent par un compte a rebours annulable, puis
+installe en silence et se rouvre.
+
+**Ce que la verification protege, et ce qu'elle ne protege pas.** L'empreinte
+est publiee a cote de la version : Plume fait donc elle-meme le controle qu'on
+demande aux gens de faire a la main. Cela garantit que le fichier recu est
+celui qui a ete publie, contre une coupure, un cache menteur ou un
+intermediaire. Cela ne protege pas d'un depot compromis, l'empreinte y etant
+publiee aussi. C'est le meme niveau de confiance qu'un telechargement manuel,
+ni plus ni moins, et il vaut mieux le dire que le laisser croire.
+
+Un fichier dont l'empreinte ne correspond pas n'est pas seulement rejete : il
+est efface. Un installeur douteux ne doit pas rester a trainer sur un disque,
+ou quelqu'un finirait par le lancer.
+
+**Le compte a rebours n'est pas une politesse.** Ce qui va commencer remplace
+le programme en cours d'execution : rien ne doit partir sans qu'on ait pu
+l'arreter. Cinq secondes, assez pour changer d'avis, trop peu pour donner
+l'impression d'attendre.
+
+**Le bandeau vit dans la page active, quelle qu'elle soit.** Sans precaution,
+n'importe quel site aurait pu poster le message et declencher un
+telechargement. Plume n'y repond que si une mise a jour est reellement en
+attente, et un second clic ne lance pas une seconde installation.
+
+**La relance est conditionnelle.** L'installation etant silencieuse, l'entree
+[Run] ordinaire est sautee ; une seconde entree, gardee par `/relance=1`,
+rouvre Plume uniquement quand c'est elle qui a demande la mise a jour. Sans ce
+garde, toute installation silencieuse la rouvrirait, y compris celles des
+tests.
+
+Le dernier geste, fermer la fenetre, vit dans sa propre methode :
+`Application.Exit` est une methode statique de .NET qu'un test ne peut pas
+remplacer, et qu'il n'a aucune envie de laisser s'executer.
+
 ### On demande au shell, on ne lit pas une cle
 
 La verification du navigateur par defaut lisait `UserChoice`. Cette cle n'est

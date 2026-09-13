@@ -148,6 +148,12 @@ Name: "{autodesktop}\{#MonNom}"; Filename: "{app}\{#MonExe}"; \
 [Run]
 Filename: "{app}\{#MonExe}"; Description: "Lancer {#MonNom}"; \
     Flags: nowait postinstall skipifsilent
+; Mise a jour lancee depuis Plume : elle s'est fermee pour liberer ses
+; fichiers et attend d'etre rouverte. L'installation etant silencieuse,
+; l'entree ci-dessus est sautee ; celle-ci prend le relais, et seulement
+; quand Plume l'a demande par /relance=1.
+Filename: "{app}\{#MonExe}"; Flags: nowait runasoriginaluser; \
+    Check: DoitRelancer
 
 [UninstallDelete]
 ; Les fichiers ecrits par Plume apres l'installation : sans cela le dossier
@@ -156,6 +162,14 @@ Type: filesandordirs; Name: "{app}\__pycache__"
 Type: files; Name: "{app}\erreur-demarrage.txt"
 
 [Code]
+// Vrai quand Plume a demande sa propre relance, par /relance=1. Sans ce
+// garde, toute installation silencieuse la rouvrirait, y compris celles des
+// tests.
+function DoitRelancer: Boolean;
+begin
+  Result := ExpandConstant('{param:relance|0}') = '1';
+end;
+
 // La langue retenue par l'assistant devient celle de Plume, ecrite dans
 // config.json juste apres la copie des fichiers. Sans cela, une personne qui
 // installe en anglais verrait un navigateur en francais au premier

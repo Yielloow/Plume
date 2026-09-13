@@ -27,6 +27,7 @@ import base64
 import math
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -1297,6 +1298,9 @@ class Navigateur(Form):
         # Ce que le systeme repondait la derniere fois qu'on a regarde. Sert
         # a ne reecrire la page d'accueil que lorsque la reponse change.
         self._defaut_connu = None
+        self._maj = None                # manifeste en attente, s'il y en a un
+        self._maj_en_cours = False
+        self._maj_annulee = False
         self._procedure = None          # notre procedure de fenetre
         self._ancienne_procedure = None  # celle de WinForms, que l'on chaine
         self._avant_agrandissement = None
@@ -4007,6 +4011,20 @@ class Navigateur(Form):
             else:
                 self.ouvrir_groupe_travail(nom)
             return
+        if genre == "maj":
+            # Demande venue du bandeau que nous avons pose nous-memes. On ne
+            # fait rien sans une mise a jour en attente : une page ne doit pas
+            # pouvoir declencher un telechargement a elle seule.
+            if not getattr(self, "_maj", None):
+                return
+            action = str(message.get("action") or "")
+            if action == "installer" and not self._maj_en_cours:
+                self._maj_en_cours = True
+                threading.Thread(target=self.installer_maj,
+                                 daemon=True).start()
+            elif action == "annuler":
+                self._maj_annulee = True
+            return
         if genre == "reglage":
             # Demande venue de la page d'accueil, qui est un fichier local a
             # nous : elle n'a pas d'autre moyen de parler a l'application.
@@ -4126,6 +4144,7 @@ class Navigateur(Form):
             return journal("recherche de mise a jour : %s" % e)
         if not manifeste:
             return
+        self._maj = manifeste
         texte = core.t("maj_disponible", manifeste["version"])
         # Une page ne sera prete que dans quelques secondes. On patiente
         # jusqu'a une minute, puis on renonce : passe ce delai, l'annonce
@@ -4144,21 +4163,137 @@ class Navigateur(Form):
         journal("mise a jour %s : aucune page prete pour l'annoncer"
                 % manifeste["version"])
 
-    def annoncer_maj(self, texte):
-        """Pose le bandeau si une page peut le porter. Faux sinon.
+    def installer_maj(self):
+        """Telecharge, verifie, previent, puis installe. Sur un fil a part.
 
-        A appeler SUR LE FIL DE LA FENETRE : `CoreWebView2` ne se lit pas
-        ailleurs.
+        Rien de ce qui touche a la page n'est fait ici : tout repasse par
+        `Invoke`, le controle WebView2 ayant une affinite de fil qui ne se
+        negocie pas.
+        """
+        manifeste = self._maj
+        self._maj_annulee = False
+
+        def dire(texte, bouton=None, action=None):
+            try:
+                self.Invoke(Action(
+                    lambda: self.bandeau_maj(texte, bouton, action)))
+            except Exception:
+                pass
+
+        dernier = [0]
+
+        def avancement(recus, total):
+            # Une fois par pour-cent, pas a chaque bloc : reecrire le bandeau
+            # mille fois par seconde ne le rendrait pas plus lisible.
+            part = int(recus * 100 / total) if total else 0
+            if part != dernier[0]:
+                dernier[0] = part
+                dire(core.t("maj_telechargement", part))
+
+        dire(core.t("maj_telechargement", 0))
+        chemin = core.telecharger_mise_a_jour(manifeste, progression=avancement)
+        if chemin is None:
+            self._maj_en_cours = False
+            return dire(core.t("maj_echec"))
+
+        # Le compte a rebours : rien ne commence sans qu'on ait pu l'arreter.
+        for reste in range(DUREE_AVANT_MAJ, 0, -1):
+            if self._maj_annulee:
+                self._maj_en_cours = False
+                return dire(core.t("maj_annulee"))
+            dire(core.t("maj_bientot", reste), core.t("maj_annuler"),
+                 "annuler")
+            time.sleep(1.0)
+        if self._maj_annulee:
+            self._maj_en_cours = False
+            return dire(core.t("maj_annulee"))
+
+        dire(core.t("maj_lancement"))
+        try:
+            # /SILENT plutot que /VERYSILENT : la barre de progression de
+            # l'installeur reste visible, ce qui evite l'impression que rien
+            # ne se passe pendant que Plume disparait.
+            # /relance=1 lui demande de rouvrir Plume a la fin.
+            subprocess.Popen(
+                [str(chemin), "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART",
+                 "/DIR=%s" % core.dossier_installe(), "/relance=1"],
+                creationflags=core.CREATE_NO_WINDOW)
+        except Exception as e:
+            self._maj_en_cours = False
+            journal("lancement de la mise a jour : %s" % e)
+            return dire(core.t("maj_echec"))
+        # On se retire : l'installeur ne peut pas remplacer des fichiers
+        # qu'un processus tient ouverts.
+        self.quitter_pour_maj()
+
+    def quitter_pour_maj(self):
+        """Ferme Plume pour laisser l'installeur travailler.
+
+        Isole dans sa propre methode parce que `Application.Exit` est une
+        methode statique de .NET : un test ne peut pas la remplacer, et il
+        n'aurait aucune envie de la laisser s'executer.
+        """
+        try:
+            self.Invoke(Action(lambda: Application.Exit()))
+        except Exception:
+            pass
+
+    def bandeau_maj(self, texte, bouton=None, action=None):
+        """Bandeau avec un bouton qui reparle a Plume. Faux si pas de page.
+
+        A appeler SUR LE FIL DE LA FENETRE.
         """
         try:
             if not self.actif or self.actif.vue.CoreWebView2 is None:
                 return False
         except Exception:
             return False
-        self.signaler(texte, erreur=False)
-        return True
+        style = ("position:fixed;z-index:2147483647;left:50%;top:24px;"
+                 "transform:translateX(-50%);max-width:min(680px,86vw);"
+                 "display:flex;align-items:center;gap:14px;"
+                 "background:#1c1b22;color:#d6d6e0;border:1px solid #7c5cff;"
+                 "border-radius:10px;padding:12px 16px;"
+                 "font:13px/1.5 'Segoe UI',sans-serif;"
+                 "box-shadow:0 12px 40px rgba(0,0,0,.55)")
+        bouton_style = ("background:#7c5cff;color:#fff;border:0;"
+                        "border-radius:7px;padding:7px 14px;cursor:pointer;"
+                        "font:600 13px 'Segoe UI',sans-serif;flex:none")
+        # Tout ce qui entre dans la page passe par json.dumps : un titre de
+        # version venu du reseau ne doit pas pouvoir fermer une chaine et
+        # ecrire du script.
+        script = (
+            "(function(){var d=document.getElementById('plume-mot');"
+            "if(!d){d=document.createElement('div');d.id='plume-mot';"
+            "document.body.appendChild(d);}"
+            "if(d._t)clearTimeout(d._t);"
+            "d.style.cssText=%s;d.textContent='';"
+            "var s=document.createElement('span');s.textContent=%s;"
+            "s.style.flex='1';d.appendChild(s);"
+            "%s})();"
+            % (json.dumps(style), json.dumps(texte),
+               ("var b=document.createElement('button');b.textContent=%s;"
+                "b.style.cssText=%s;b.onclick=function(){"
+                "try{window.chrome.webview.postMessage(JSON.stringify("
+                "{type:'maj',action:%s}));}catch(e){}};"
+                "d.appendChild(b);"
+                % (json.dumps(bouton), json.dumps(bouton_style),
+                   json.dumps(action))) if bouton else ""))
+        try:
+            self.actif.vue.CoreWebView2.ExecuteScriptAsync(script)
+            return True
+        except Exception as e:
+            journal("bandeau de mise a jour : %s" % e)
+            return False
 
-    def signaler(self, texte, erreur=True):
+    def annoncer_maj(self, texte):
+        """Pose le bandeau si une page peut le porter. Faux sinon.
+
+        A appeler SUR LE FIL DE LA FENETRE : `CoreWebView2` ne se lit pas
+        ailleurs.
+        """
+        return self.bandeau_maj(texte, core.t("maj_bouton"), "installer")
+
+    def signaler(self, texte, erreur=True, garder=False):
         """Affiche un bandeau dans la page active.
 
         Sans cela, un echec de lecture ne se voit pas : la zone du lecteur reste
@@ -4186,11 +4321,18 @@ class Navigateur(Form):
             try:
                 if not self.actif or not self.actif.vue.CoreWebView2:
                     return
-                script = ("(function(){var d=document.createElement('div');"
-                          "d.textContent=%s;d.style.cssText=%s;"
-                          "document.body.appendChild(d);"
-                          "setTimeout(function(){d.remove();},12000);})();"
-                          % (json.dumps(texte), json.dumps(style)))
+                # Un identifiant fixe : un bandeau qui se met a jour
+                # remplace le precedent au lieu de s'empiler dessus.
+                script = (
+                    "(function(){var d=document.getElementById('plume-mot');"
+                    "if(!d){d=document.createElement('div');"
+                    "d.id='plume-mot';document.body.appendChild(d);}"
+                    "d.textContent=%s;d.style.cssText=%s;"
+                    "if(d._t)clearTimeout(d._t);"
+                    "%s})();"
+                    % (json.dumps(texte), json.dumps(style),
+                       "" if garder
+                       else "d._t=setTimeout(function(){d.remove();},12000);"))
                 self.actif.vue.CoreWebView2.ExecuteScriptAsync(script)
             except Exception as e:
                 journal("bandeau : %s" % e)
@@ -4766,6 +4908,9 @@ def deja_ouvert(url):
 
 # Garde-fou : si le navigateur ne signalait jamais qu'il est pret, l'ouverture
 # ne doit pas rester a l'ecran indefiniment.
+# Secondes avant qu'une mise a jour acceptee ne se lance. Assez pour
+# changer d'avis, trop peu pour donner l'impression d'attendre.
+DUREE_AVANT_MAJ = 5
 DUREE_MAX_INTRO = 12.0
 DUREE_EFFACEMENT = 0.80    # le logotype s'efface, fenetre encore immobile
 DUREE_ETALEMENT = 0.65     # l'ouverture rejoint les bords de la fenetre
