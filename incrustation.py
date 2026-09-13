@@ -71,12 +71,28 @@ if ctypes.sizeof(ctypes.c_void_p) == 8:
     _set_long = user32.SetWindowLongPtrW
     _set_long.restype = ctypes.c_longlong
     _set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_longlong]
+    _get_long = user32.GetWindowLongPtrW
+    _get_long.restype = ctypes.c_longlong
+    _get_long.argtypes = [wintypes.HWND, ctypes.c_int]
 else:                                     # Windows 32 bits
     _set_long = user32.SetWindowLongW
     _set_long.restype = ctypes.c_long
     _set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+    _get_long = user32.GetWindowLongW
+    _get_long.restype = ctypes.c_long
+    _get_long.argtypes = [wintypes.HWND, ctypes.c_int]
 
 GWLP_HWNDPARENT = -8
+GWL_EXSTYLE = -20
+# Une fenetre qui porte ce style n'est pas activee quand elle est montree, ni
+# quand on clique dedans. Elle recoit toujours la souris, ce qui suffit a la
+# barre de lecture.
+#
+# Ce qu'il NE fait PAS, mesure a l'appui : il n'empeche pas un
+# `SetForegroundWindow` explicite. Il ferme donc le chemin le plus probable,
+# celui de la fenetre qui s'active en apparaissant, mais pas tous. C'est pour
+# cela que `_rendre_le_focus` reste en place derriere.
+WS_EX_NOACTIVATE = 0x08000000
 GA_ROOT = 2
 SWP_NOACTIVATE = 0x0010
 SWP_NOSIZE = 0x0001
@@ -129,6 +145,34 @@ def fenetre_du_processus(pid=None):
     return candidates[0][1]
 
 
+def _interdire_activation(fenetre, interdite=True):
+    """Empeche, ou reautorise, l'activation de cette fenetre.
+
+    mpv ne doit jamais prendre le premier plan : il est incruste dans une page,
+    pilote par le tube, et sa fenetre est POSSEDEE par celle de Plume. Or
+    activer une fenetre possedee fait remonter tous ses proprietaires : c'est
+    par la que Plume passait devant Discord a chaque titre d'une playlist.
+
+    La garantie est partielle, et il vaut mieux le savoir : le style empeche
+    l'activation a l'affichage et au clic, pas un `SetForegroundWindow`
+    explicite. Mesure faite sur une vraie fenetre.
+
+    Renvoie vrai si le style a ete pose ou retire comme demande.
+    """
+    if not fenetre:
+        return False
+    try:
+        actuel = int(_get_long(fenetre, GWL_EXSTYLE))
+        voulu = (actuel | WS_EX_NOACTIVATE) if interdite \
+            else (actuel & ~WS_EX_NOACTIVATE)
+        if voulu != actuel:
+            _set_long(fenetre, GWL_EXSTYLE, voulu)
+        return bool(int(_get_long(fenetre, GWL_EXSTYLE))
+                    & WS_EX_NOACTIVATE) == bool(interdite)
+    except Exception:
+        return False
+
+
 class Incrustation:
     """Pilote un mpv sans bordure, colle sur la zone du lecteur de la page."""
 
@@ -170,6 +214,7 @@ class Incrustation:
         if fenetre and self.en_cours():
             try:
                 _set_long(fenetre, GWLP_HWNDPARENT, self.parent)
+                _interdire_activation(fenetre, not self.plein_ecran)
             except Exception:
                 # Le reparentage a echoue : plutot qu'une fenetre orpheline
                 # posee au travers de l'ecran, on relance proprement.
@@ -205,6 +250,11 @@ class Incrustation:
                 if not a.startswith(("--force-window", "--keep-open",
                                      "--force-media-title"))]
         args += [
+            # Le volume retenu de la derniere fois. Pose au lancement et non
+            # apres, sinon on entendrait le debut trop fort avant la
+            # correction.
+            "--volume=%d" % core.volume_retenu()[0],
+            "--mute=" + ("yes" if core.volume_retenu()[1] else "no"),
             "--no-border",                 # pas de decoration : elle s'incruste
             # Demande a mpv de ne pas prendre le premier plan en s'ouvrant.
             # **Mesure faite : sur cette version, l'option ne suffit pas**, il
@@ -454,6 +504,10 @@ class Incrustation:
                     # la vue devient proprietaire : mpv flotte au-dessus d'elle,
                     # se minimise et se ferme avec elle
                     _set_long(hwnd, GWLP_HWNDPARENT, self.parent)
+                    # Avant meme de la placer : chaque instant ou elle est
+                    # activable est un instant ou elle peut voler le premier
+                    # plan.
+                    _interdire_activation(hwnd, not self.plein_ecran)
                     self.fenetre = hwnd
                 if self._zone:
                     self.placer(*self._zone)
@@ -610,6 +664,9 @@ class Incrustation:
         self.plein_ecran = actif
         if not self.fenetre:
             return
+        # En plein ecran, mpv doit recevoir Echap et f : c'est le seul moment
+        # ou son activation est legitime.
+        _interdire_activation(self.fenetre, not actif)
         if actif:
             # plus de decoupe ni de suivi : mpv occupe l'ecran comme il l'entend
             user32.SetWindowRgn(self.fenetre, None, True)

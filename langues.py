@@ -51,6 +51,9 @@ TEXTES = {
                                "lui-meme : le bouton ouvre la page des "
                                "Parametres ou vous pouvez le choisir.",
         "accueil_langue": "Langue",
+        "tache_fenetre": "Nouvelle fenetre",
+        "tache_privee": "Nouvelle fenetre privee",
+        "tache_onglet": "Nouvel onglet",
         "accueil_defaut_fait": "Plume est votre navigateur par defaut",
         "accueil_vie_privee": "Plume n'a pas de serveur : rien ne remonte "
                               "vers son auteur, il n'y a pas de compte ni de "
@@ -98,6 +101,9 @@ TEXTES = {
                                "button opens the Settings page where you can "
                                "choose it.",
         "accueil_langue": "Language",
+        "tache_fenetre": "New window",
+        "tache_privee": "New private window",
+        "tache_onglet": "New tab",
         "accueil_defaut_fait": "Plume is your default browser",
         "accueil_vie_privee": "Plume has no server: nothing goes back to its "
                               "author, there is no account and no sync. Your "

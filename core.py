@@ -43,6 +43,10 @@ DEFAULT_CONFIG = {
     # Glissement de la page en changeant d'onglet. C'est le geste le plus
     # frequent d'un navigateur : si l'animation gene, ce reglage la coupe.
     "glissement_onglets": True,
+    # Volume du lecteur, retenu d'une video a l'autre. Un volume est un
+    # reglage de personne, pas de video.
+    "volume": 100,
+    "muet": False,
     # Langue de l'interface : "fr", "en", ou "auto" pour suivre celle de
     # Windows. L'installateur y ecrit le choix fait a l'installation.
     "langue": "auto",
@@ -878,7 +882,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1105,3 +1109,107 @@ def est_navigateur_par_defaut():
             return winreg.QueryValueEx(cle, "ProgId")[0] == "PlumeHTML"
     except Exception:
         return False
+
+
+def _porte_une_icone(chemin):
+    """Vrai si ce fichier contient au moins une icone extractible."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        shell32.ExtractIconExW.argtypes = [
+            wintypes.LPCWSTR, ctypes.c_int,
+            ctypes.POINTER(wintypes.HICON), ctypes.POINTER(wintypes.HICON),
+            wintypes.UINT]
+        shell32.ExtractIconExW.restype = wintypes.UINT
+        grande, petite = wintypes.HICON(), wintypes.HICON()
+        shell32.ExtractIconExW(str(chemin), 0, ctypes.byref(grande),
+                               ctypes.byref(petite), 1)
+        trouvee = bool(grande.value or petite.value)
+        for h in (grande, petite):
+            if h.value:
+                user32.DestroyIcon(h)
+        return trouvee
+    except Exception:
+        return False
+
+
+def ressource_icone():
+    """Ce qu'on declare a la barre des taches, sous la forme « module,index ».
+
+    L'executable d'abord : c'est la forme que le shell sait lire partout, et
+    PyInstaller y grave l'icone a la construction. Le fichier .ico ne sert que
+    de repli, pour le cas ou l'executable n'en porterait pas.
+    """
+    try:
+        exe = Path(EXECUTABLE)
+        if exe.exists() and _porte_une_icone(exe):
+            return "%s,0" % exe
+    except Exception:
+        pass
+    return "%s,0" % ICONE
+
+
+# Le volume est tire au curseur, donc il change en continu. Une ecriture par
+# pixel parcouru n'aurait aucun sens : on retient la valeur tout de suite, on
+# l'ecrit avec un frein.
+_SON_ECRIT = [0.0]
+# Vrai quand la memoire porte une valeur que le disque n'a pas encore.
+_SON_SALE = [False]
+FREIN_SON = 3.0
+
+
+def noter_volume(volume, muet=None, maintenant=None):
+    """Retient le volume du lecteur. Vrai si le fichier a ete reecrit.
+
+    Les valeurs hors bornes sont ramenees dans [0, 150] : mpv accepte de
+    depasser cent, mais une valeur aberrante venue du tube ne doit pas
+    devenir le volume de demain.
+    """
+    try:
+        volume = max(0, min(150, int(round(float(volume)))))
+    except (TypeError, ValueError):
+        return False
+    maintenant = time.time() if maintenant is None else maintenant
+    if CONFIG.get("volume") != volume:
+        _SON_SALE[0] = True
+    CONFIG["volume"] = volume
+    if muet is not None:
+        muet = bool(muet)
+        if CONFIG.get("muet") != muet:
+            _SON_SALE[0] = True
+        CONFIG["muet"] = muet
+    if not _SON_SALE[0]:
+        return False
+    if maintenant - _SON_ECRIT[0] < FREIN_SON:
+        return False        # le drapeau reste leve : rien n'est perdu
+    return ecrire_son(maintenant)
+
+
+def ecrire_son(maintenant=None):
+    """Pose sur le disque le volume retenu, s'il ne s'y trouve pas deja.
+
+    Appele par le frein, et sans condition a la fermeture : le dernier reglage
+    ne doit pas se perdre parce qu'il est arrive trois secondes avant la fin.
+    """
+    if not _SON_SALE[0]:
+        return False
+    _SON_ECRIT[0] = time.time() if maintenant is None else maintenant
+    try:
+        CONFIG_FILE.write_text(
+            json.dumps(CONFIG, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        _SON_SALE[0] = False
+        return True
+    except Exception:
+        return False
+
+
+def volume_retenu():
+    """Le volume et l'etat muet a poser au prochain lancement de mpv."""
+    try:
+        volume = max(0, min(150, int(CONFIG.get("volume", 100))))
+    except (TypeError, ValueError):
+        volume = 100
+    return volume, bool(CONFIG.get("muet"))

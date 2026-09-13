@@ -134,6 +134,37 @@ onglet ferme tombe hors du cadre, decouvrant celle qui prend sa place.
 Si l'animation vous gene, mettre glissement_onglets a false dans
 config.json. Rien d'autre ne change.
 
+EN FRANCAIS OU EN ANGLAIS
+-------------------------
+L'assistant d'installation vous demande la langue, et Plume la garde.
+Pour en changer ensuite : la page d'accueil, en haut a droite, FR ou EN.
+Le changement est immediat, il n'y a rien a redemarrer.
+
+Le lecteur video suit la meme langue.
+
+FAIRE DE PLUME VOTRE NAVIGATEUR PAR DEFAUT
+------------------------------------------
+Un bouton sur la page d'accueil ouvre la page des Parametres de Windows
+ou vous pouvez le choisir.
+
+Pourquoi un bouton qui ouvre une page, plutot qu'un bouton qui le fait :
+depuis Windows 10, aucun programme ne peut se designer lui-meme
+navigateur par defaut. Seul votre choix explicite, dans les Parametres,
+compte. Ce que Plume peut faire, c'est s'y declarer pour apparaitre dans
+la liste, et vous y emmener directement.
+
+Une fois choisie, le bouton vous le dit et ne sert plus a rien. Il lit
+l'association reelle du systeme, pas ses propres reglages : il ne vous
+annoncera jamais un changement qui n'a pas eu lieu.
+
+LE SON EST RETENU
+-----------------
+Le volume que vous reglez vaut pour les videos suivantes, et pour vos
+prochaines sessions. Les videos sortent souvent trop fort : le baisser une
+fois suffit, il n'y a pas a recommencer a chaque titre.
+
+Couper le son est retenu de la meme facon.
+
 LE ZOOM EST RETENU PAR SITE
 ---------------------------
 Ctrl+= et Ctrl+- ajustent la taille d'un site, de 50 % a 200 %. Le reglage

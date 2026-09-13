@@ -977,6 +977,29 @@ local function publier_position(force)
 end
 
 mp.add_periodic_timer(5, function() publier_position(false) end)
+
+-- Le volume est un reglage de personne, pas de video : Plume le retient d'une
+-- lecture a l'autre. On ne publie qu'apres un silence, sinon tirer le curseur
+-- enverrait cinquante messages pour un seul geste.
+local son_en_attente = nil
+local function publier_son()
+    if not son_en_attente then return end
+    vers_plume("son", son_en_attente)
+    son_en_attente = nil
+end
+
+local function noter_son()
+    son_en_attente = string.format("%d/%d", math.floor((etat.volume or 100) + 0.5),
+                                   etat.muet and 1 or 0)
+end
+
+mp.observe_property("volume", "number", function(_, v)
+    if v then noter_son() end
+end)
+mp.observe_property("mute", "bool", function(_, v)
+    noter_son()
+end)
+mp.add_periodic_timer(2, publier_son)
 -- Une pause, c'est souvent « je m'arrete la » : on note tout de suite.
 mp.observe_property("pause", "bool", function(_, v)
     if v then publier_position(true) end

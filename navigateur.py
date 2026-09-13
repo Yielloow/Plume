@@ -336,15 +336,22 @@ MODELE_ACCUEIL = """<!doctype html>
  .reglages button:hover { color:#fbfbfe; }
  .reglages button[aria-pressed="true"] { color:#fbfbfe; background:#26252f;
                                          border-color:#3a3944; }
- .reglages .defaut { border:1px solid #3a3944; border-radius:8px;
-                     padding:6px 12px; }
- .reglages .defaut:hover { border-color:#7c5cff; color:#fbfbfe; }
- .reglages .defaut[disabled] { border-color:#3a3944; color:#6f6e7c;
-                               cursor:default; }
+ .reglages .defaut { display:inline-flex; align-items:center; gap:7px;
+                     border:1px solid #3a3944; border-radius:999px;
+                     padding:7px 15px 7px 11px; color:#c9c3dd;
+                     background:linear-gradient(180deg,#26252f,#1c1b22);
+                     transition:border-color .18s, color .18s, box-shadow .25s,
+                                transform .12s; }
+ .reglages .defaut svg { opacity:.65; transition:opacity .18s,
+                                                 transform .35s; }
+ .reglages .defaut:hover { color:#fbfbfe; border-color:#7c5cff;
+                           transform:translateY(-1px);
+                           box-shadow:0 4px 18px -6px rgba(124,92,255,.85); }
+ .reglages .defaut:hover svg { opacity:1; transform:rotate(90deg) scale(1.1); }
+ .reglages .defaut:active { transform:translateY(0); }
 </style></head><body>
  <div class="reglages">
-   <button class="defaut" id="defaut" onclick="devenirDefaut()"%(desactive)s
-           title="%(defaut_aide)s">%(defaut)s</button>
+%(bouton_defaut)s
    <span>%(langue_nom)s</span>
    <button data-langue="fr" aria-pressed="%(fr_choisie)s"
            onclick="changerLangue('fr')">FR</button>
@@ -981,6 +988,12 @@ class Onglet(object):
                                             float(morceaux[1]))
                 except ValueError:
                     pass
+            return
+        if nom == "son":
+            # « volume/muet » : le lecteur signale que l'un des deux a change.
+            morceaux = str(valeur or "").split("/")
+            if len(morceaux) == 2:
+                core.noter_volume(morceaux[0], morceaux[1] == "1")
             return
         if nom == "defiler":
             try:
@@ -2729,7 +2742,19 @@ class Navigateur(Form):
         """Reecrit la page d'accueil avec les favoris et le compteur du moment."""
         try:
             langue = core.langue()
+            # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
+            # disparait, au lieu de rester grise a repeter un etat.
             deja = core.est_navigateur_par_defaut()
+            bouton = "" if deja else (
+                '   <button class="defaut" onclick="devenirDefaut()"\n'
+                '           title="%s">\n'
+                '     <svg viewBox="-1 -1 2 2" width="13" height="13"'
+                ' aria-hidden="true"><path fill="#a78bfa"'
+                ' d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1'
+                ' Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>\n'
+                '     %s\n   </button>'
+                % (_echapper(core.t("accueil_defaut_aide")),
+                   _echapper(core.t("accueil_defaut"))))
             page = MODELE_ACCUEIL % {
                 "moteur": _echapper(core.CONFIG.get("moteur_recherche", "")),
                 "tuiles": self._tuiles_favoris(),
@@ -2739,10 +2764,7 @@ class Navigateur(Form):
                 "langue_nom": _echapper(core.t("accueil_langue")),
                 "fr_choisie": "true" if langue == "fr" else "false",
                 "en_choisie": "true" if langue == "en" else "false",
-                "defaut": _echapper(core.t("accueil_defaut_fait") if deja
-                                    else core.t("accueil_defaut")),
-                "defaut_aide": _echapper(core.t("accueil_defaut_aide")),
-                "desactive": " disabled" if deja else "",
+                "bouton_defaut": bouton,
                 "pied_pubs": _echapper(
                     core.t("accueil_pubs", self.pubs_bloquees,
                            *core.marques_pluriel("accueil_pubs",
@@ -4123,6 +4145,8 @@ class Navigateur(Form):
         if core.noter_position(positions(), cle, position, duree,
                                onglet.titre or ""):
             ecrire_positions()
+            # Le volume aussi : il se regle souvent juste avant de fermer.
+            core.ecrire_son()
 
     def relancer_lecteur(self, onglet):
         """Rallume le lecteur d'un onglet video sur lequel on revient.
@@ -4494,19 +4518,20 @@ class Navigateur(Form):
             barre_taches.marquer_fenetre(
                 self.Handle.ToInt64(), APPID,
                 '"%s"' % core.EXECUTABLE, "Plume",
-                "%s,0" % core.ICONE)
+                core.ressource_icone())
         except Exception as e:
             journal("barre des taches : %s" % e)
 
     def poser_les_taches(self):
         """Menu « Taches » du clic droit sur l'icone de la barre des taches."""
         try:
+            icone = core.ressource_icone()
             barre_taches.definir_taches(APPID, [
-                ("Nouvelle fenetre", core.EXECUTABLE, "--nouvelle-fenetre",
-                 "%s,0" % core.ICONE),
-                ("Nouvelle fenetre privee", core.EXECUTABLE,
-                 "--fenetre-privee", "%s,0" % core.ICONE),
-                ("Nouvel onglet", core.EXECUTABLE, "", "%s,0" % core.ICONE),
+                (core.t("tache_fenetre"), core.EXECUTABLE,
+                 "--nouvelle-fenetre", icone),
+                (core.t("tache_privee"), core.EXECUTABLE,
+                 "--fenetre-privee", icone),
+                (core.t("tache_onglet"), core.EXECUTABLE, "", icone),
             ])
         except Exception as e:
             journal("taches : %s" % e)

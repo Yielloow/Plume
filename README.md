@@ -1043,6 +1043,106 @@ n'arrivent pas a intervalle regulier, et comme l'animation se cale sur le temps
 ecoule, un battement en retard fait un pas plus grand. Monter la resolution
 d'horloge du processus le corrigerait, au prix de la consommation.
 
+### Le volume se retient, et le premier plan ne se gagne pas toujours
+
+**Le volume est un reglage de personne, pas de video.** Il vit donc dans
+`config.json`, globalement, et non par video comme les positions de lecture.
+mpv demarre directement au volume retenu, et non corrige apres coup : sinon on
+entendrait le debut trop fort avant que la correction arrive.
+
+L'ecriture est freinee a une toutes les trois secondes, un curseur de volume se
+tirant en continu. Le frein a d'abord coute la derniere valeur : il retenait
+l'ecriture, puis l'appel suivant trouvait la valeur deja en memoire, concluait
+qu'il n'y avait rien de neuf, et renoncait. Un drapeau dit maintenant que la
+memoire est en avance sur le disque, et il reste leve jusqu'a l'ecriture,
+forcee a la fermeture.
+
+**Le vol de premier plan par mpv est intermittent, et on sait pourquoi.** La
+fenetre de mpv porte desormais `WS_EX_NOACTIVATE` des son adoption, ce qui
+l'empeche d'etre activee en apparaissant ou au clic. Le style est retire le
+temps du plein ecran, ou mpv doit recevoir Echap et f.
+
+Ce style ne bloque PAS un `SetForegroundWindow` explicite, mesure a l'appui.
+Et la mesure a montre autre chose : le meme appel, dans les memes conditions,
+**reussit une fois et echoue la suivante**. Windows l'accorde ou le refuse
+selon l'etat ambiant du verrou de premier plan. C'est l'explication du defaut
+lui-meme, et la raison pour laquelle `_rendre_le_focus` reste en place derriere
+le style.
+
+C'est aussi pourquoi le test correspondant n'exige que ce qui depend de nous,
+le style pose et retire, et se contente d'OBSERVER l'arbitration du systeme.
+Un test qui exigerait une decision de Windows crierait au loup une fois sur
+deux, ce qui est pire que pas de test.
+
+### Deux langues, sans bibliotheque de traduction
+
+Francais et anglais, dans `langues.py` : un dictionnaire plat. Deux langues et
+moins de soixante phrases ne justifient pas `gettext`, qui obligerait a
+compiler des catalogues binaires et a les embarquer dans un paquet qu'on tient
+a garder mince, pour un resultat identique.
+
+Le reglage `langue` vaut `fr`, `en`, ou `auto`. En `auto`, Plume lit la langue
+d'INTERFACE de Windows et non le format regional : on veut savoir dans quelle
+langue la personne lit, pas comment elle ecrit ses dates. Tout ce qui n'est pas
+du francais donne de l'anglais, qui est la langue de repli et non une
+preference : un utilisateur allemand lira l'anglais, ce qui vaut mieux qu'un
+francais qu'il ne lit pas.
+
+L'installateur ecrit le choix dans `config.json` juste apres la copie. Sans
+cela, quelqu'un installant en anglais aurait un navigateur en francais sans
+savoir ou changer cela. Le fichier est charge et reecrit octet pour octet, ce
+qui suppose qu'il reste en pur ASCII : la construction le verifie maintenant,
+plutot que de l'esperer.
+
+**Le pluriel n'est pas le meme des deux cotes.** Le francais accorde le nom ET
+l'adjectif, l'anglais le nom seul : « 4 requetes publicitaires refusees »
+contre « 4 advertising requests refused ». La meme phrase n'a donc pas le meme
+nombre de trous d'une langue a l'autre, et chaque langue declare combien elle
+en attend.
+
+Le lecteur video tourne dans son propre processus et ne lit pas notre
+configuration : la langue lui arrive par la ligne de commande, comme la qualite
+et les images par seconde, et `osc.lua` porte ses cinq phrases.
+
+Une cle absente renvoie la cle elle-meme plutot que de lever : une phrase
+manquante doit se voir a l'ecran, pas faire tomber la fenetre qui allait
+l'afficher.
+
+### Navigateur par defaut : ce qu'un programme a le droit de faire
+
+**Aucun programme ne peut se designer lui-meme navigateur par defaut.**
+Microsoft a ferme cette porte avec Windows 10 et l'a verrouillee sous
+Windows 11 : l'association des protocoles `http` et `https` ne change que par
+un choix explicite de l'utilisateur, dans les Parametres. Ecrire la cle
+directement ne fonctionne pas, et ferait de Plume un logiciel qui force la
+main.
+
+Ce qui est possible, et qui est fait : l'installateur declare Plume dans
+`HKCU\Software\RegisteredApplications`, avec ses `Capabilities` et ses
+associations `http`, `https`, `.html`, `.htm`. C'est ce qui la fait APPARAITRE
+dans la liste, ou elle n'etait pas du tout. Un bouton sur la page d'accueil
+ouvre ensuite `ms-settings:defaultapps?registeredAppUser=Plume`, Plume deja
+designee.
+
+Le bouton lit l'association REELLE, dans
+`Shell\Associations\UrlAssociations\https\UserChoice`, et non nos propres
+cles : se declarer ne rend pas choisi, et annoncer « c'est fait » alors que ce
+n'est pas le cas serait le pire des deux mondes.
+
+L'installation est par utilisateur, donc tout vit sous HKCU. Windows lit les
+deux ruches, et cela evite une demande d'elevation de plus.
+
+### L'icone de la barre des taches vient d'un module, pas d'un .ico
+
+`System.AppUserModel.RelaunchIconResource` attend une ressource d'icone, de la
+forme `module,index`. Un fichier `.ico` suivi d'un index est accepte par
+`ExtractIconEx`, mesure faite, mais pas par tous les chemins de code du shell :
+l'epinglage passe par une autre extraction, et retombe sur l'icone generique de
+document quand elle echoue.
+
+Plume declare donc l'executable, qui porte l'icone en ressource, et VERIFIE
+qu'il en porte vraiment une avant de l'annoncer. Le `.ico` reste en repli.
+
 ### Un onglet neuf arrive, un onglet ferme tombe
 
 Le meme mouvement sert aux trois gestes. Un onglet neuf se pose toujours a
