@@ -49,7 +49,11 @@ WizardStyle=modern
 MinVersion=10.0.17763
 
 [Languages]
-Name: "francais"; MessagesFile: "compiler:Languages\French.isl"
+; L'ordre compte : Inno propose la langue du systeme si elle est dans la liste,
+; et l'anglais sert de repli pour tout le reste du monde. C'est aussi cette
+; langue-la que Plume parlera au premier lancement.
+Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
 Name: "bureau"; Description: "Creer un raccourci sur le Bureau"; \
@@ -60,6 +64,42 @@ Name: "bureau"; Description: "Creer un raccourci sur le Bureau"; \
 ; n'y est de toute facon jamais copie.
 Source: "..\..\Plume-paquet\Plume\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Registry]
+; Declaration de Plume comme navigateur possible, sous HKCU : l'installation
+; est par utilisateur, elle n'a donc ni le droit ni le besoin d'ecrire dans
+; HKLM. Windows lit les deux.
+;
+; Ce que ces cles font, et surtout ce qu'elles ne font pas : elles font
+; APPARAITRE Plume dans Parametres > Applications par defaut. Elles ne le
+; rendent pas navigateur par defaut, et aucune cle ne le peut : depuis
+; Windows 10, seul un choix explicite de l'utilisateur y parvient.
+Root: HKCU; Subkey: "Software\Classes\PlumeHTML"; \
+    ValueType: string; ValueName: ""; ValueData: "Plume Document"; \
+    Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\PlumeHTML\DefaultIcon"; \
+    ValueType: string; ValueName: ""; ValueData: "{app}\{#MonExe},0"
+Root: HKCU; Subkey: "Software\Classes\PlumeHTML\shell\open\command"; \
+    ValueType: string; ValueName: ""; \
+    ValueData: """{app}\{#MonExe}"" ""%1"""
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities"; \
+    ValueType: string; ValueName: "ApplicationName"; ValueData: "{#MonNom}"; \
+    Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities"; \
+    ValueType: string; ValueName: "ApplicationDescription"; \
+    ValueData: "Un navigateur qui joue les videos avec mpv"
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities\URLAssociations"; \
+    ValueType: string; ValueName: "http"; ValueData: "PlumeHTML"
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities\URLAssociations"; \
+    ValueType: string; ValueName: "https"; ValueData: "PlumeHTML"
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities\FileAssociations"; \
+    ValueType: string; ValueName: ".html"; ValueData: "PlumeHTML"
+Root: HKCU; Subkey: "Software\{#MonNom}\Capabilities\FileAssociations"; \
+    ValueType: string; ValueName: ".htm"; ValueData: "PlumeHTML"
+Root: HKCU; Subkey: "Software\RegisteredApplications"; \
+    ValueType: string; ValueName: "{#MonNom}"; \
+    ValueData: "Software\{#MonNom}\Capabilities"; \
+    Flags: uninsdeletevalue
 
 [Icons]
 Name: "{group}\{#MonNom}"; Filename: "{app}\{#MonExe}"
@@ -77,6 +117,37 @@ Type: filesandordirs; Name: "{app}\__pycache__"
 Type: files; Name: "{app}\erreur-demarrage.txt"
 
 [Code]
+// La langue retenue par l'assistant devient celle de Plume, ecrite dans
+// config.json juste apres la copie des fichiers. Sans cela, une personne qui
+// installe en anglais verrait un navigateur en francais au premier
+// lancement, et n'aurait aucune idee d'ou changer cela.
+//
+// Le fichier est charge et reecrit tel quel, octet pour octet : le seul
+// morceau touche est de l'ASCII, les accents du reste du fichier traversent
+// donc intacts.
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Chemin, Texte: String;
+  Brut: AnsiString;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    Chemin := ExpandConstant('{app}\config.json');
+    // Trois types, et ce n'est pas du zele : LoadStringFromFile et
+    // SaveStringToFile travaillent sur des octets (AnsiString), tandis que
+    // StringChangeEx travaille sur du texte (String). Les melanger donne un
+    // « Type mismatch » a la compilation, ce qui a deja coute une
+    // construction.
+    if LoadStringFromFile(Chemin, Brut) then
+    begin
+      Texte := Brut;
+      StringChangeEx(Texte, '"langue": "auto"',
+                     '"langue": "' + ActiveLanguage + '"', True);
+      SaveStringToFile(Chemin, Texte, False);
+    end;
+  end;
+end;
+
 // Le dossier profil contient les onglets, l'historique, les cookies de
 // session et les positions de lecture. Le supprimer sans demander ferait
 // perdre tout cela a la premiere desinstallation, y compris celle que

@@ -166,7 +166,14 @@
       monte = S * 0.72;
       descend = S * 0.21;
     }
-    var ligneTexte = milieu + (monte - descend) / 2;
+    // Le decalage vient d'une mesure, pas d'un reglage a l'oeil : l'intro de
+    // l'application a ete rendue hors ecran et ses pixels comptes, le centre
+    // d'encre du mot y tombe a 0,212 fois la taille de police sous le milieu.
+    // Centrer le mot sur le milieu tout court, comme le faisait la version
+    // precedente, le remontait donc de vingt pixels par rapport a l'etincelle
+    // et au trait.
+    var DESCENTE = 0.212;
+    var ligneTexte = milieu + S * DESCENTE + (monte - descend) / 2;
     // Sous les jambages, pas dessus : le point et le trait partagent la meme
     // ligne, c'est ce qui relie les deux bouts du logotype.
     var yTrait = milieu + S * 0.92;

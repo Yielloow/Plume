@@ -76,6 +76,114 @@ a { color: var(--accent-pale); }
 }
 .sous-bouton { color: var(--texte2); font-size: 14px; margin-top: 14px; }
 
+/* --- Le relief, sans moteur 3D ----------------------------------------- */
+
+/* Le halo derriere le titre respire, comme l'etincelle de l'intro respire
+   pendant que le navigateur se prepare. Meme periode, meme intention : dire
+   que quelque chose vit. */
+header { position: relative; }
+.halo {
+  position: absolute; left: -80px; top: 10px; width: 380px; height: 380px;
+  pointer-events: none; z-index: -1;
+  background: radial-gradient(circle,
+              rgba(124, 92, 255, .30) 0%,
+              rgba(124, 92, 255, .10) 38%,
+              rgba(124, 92, 255, 0) 68%);
+  animation: respire 5.2s ease-in-out infinite;
+}
+@keyframes respire {
+  0%, 100% { transform: scale(1);    opacity: .75; }
+  50%      { transform: scale(1.14); opacity: 1; }
+}
+
+/* La parallaxe : quelques degres, pas plus. Au dela, l'etincelle se decolle
+   du titre et le logotype cesse d'etre un bloc. */
+.logotype svg {
+  transition: transform .25s cubic-bezier(.22, .61, .36, 1);
+  will-change: transform;
+}
+
+/* Les sections montent a l'approche. Elles sont visibles par defaut : si le
+   JavaScript ne tourne pas, rien ne disparait. */
+.monte { opacity: 1; transform: none; }
+.js .monte {
+  opacity: 0; transform: translateY(22px);
+  transition: opacity .6s ease-out, transform .6s cubic-bezier(.22, .61, .36, 1);
+}
+.js .monte.vu { opacity: 1; transform: none; }
+
+/* La carte du navigateur : du vrai relief, en perspective CSS. Elle se
+   redresse au survol, ce qui donne le volume sans qu'aucune image ne soit
+   chargee : tout est dessine par le navigateur qui l'affiche. */
+.scene { perspective: 1400px; margin: 40px 0 8px; }
+.carte {
+  transform: rotateX(9deg) rotateY(-7deg) rotateZ(.6deg);
+  transform-style: preserve-3d;
+  transition: transform .5s cubic-bezier(.22, .61, .36, 1),
+              box-shadow .5s ease-out;
+  border-radius: 12px; overflow: hidden;
+  border: 1px solid var(--bord); background: #12131a;
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, .9),
+              0 0 0 1px rgba(124, 92, 255, .12);
+}
+.scene:hover .carte {
+  transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) translateY(-4px);
+  box-shadow: 0 40px 90px -34px rgba(0, 0, 0, .95),
+              0 0 0 1px rgba(124, 92, 255, .35);
+}
+.carte .barre-onglets {
+  display: flex; gap: 4px; padding: 6px 8px 0; background: #1c1b22;
+}
+.carte .onglet {
+  font-size: 11px; color: #8f8f9e; padding: 7px 14px 8px;
+  border-radius: 8px 8px 0 0; white-space: nowrap;
+}
+.carte .onglet.actif {
+  color: #fbfbfe; background: #40395c;
+  box-shadow: inset 0 1px 0 #7c5cff, inset 1px 0 0 #7c5cff,
+              inset -1px 0 0 #7c5cff;
+}
+.carte .barre-adresse {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: #2b2a33;
+}
+.carte .pilule {
+  flex: 1; font-size: 11px; color: #a39bbd; background: #1c1b22;
+  border-radius: 999px; padding: 5px 12px;
+}
+.carte .video {
+  position: relative; aspect-ratio: 16 / 9;
+  background: linear-gradient(150deg, #241f3d 0%, #14131c 60%, #1d1830 100%);
+}
+.carte .lecteur {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 10px 12px 12px;
+  background: linear-gradient(transparent, rgba(0, 0, 0, .75));
+}
+.carte .curseur { height: 3px; border-radius: 2px; background: #3a3944; }
+.carte .curseur i {
+  display: block; height: 100%; width: 38%; border-radius: 2px;
+  background: #a78bfa; box-shadow: 0 0 10px rgba(167, 139, 250, .9);
+}
+.carte .duree {
+  margin-top: 8px; font-size: 10px; color: #c9c3dd;
+  display: flex; justify-content: space-between;
+}
+.legende {
+  text-align: center; color: var(--texte2); font-size: 13px; margin: 0 0 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .halo { animation: none; }
+  .carte, .scene:hover .carte { transition: none; transform: none; }
+  .logotype svg { transition: none; }
+  .js .monte { opacity: 1; transform: none; transition: none; }
+}
+@media (max-width: 560px) {
+  .halo { width: 250px; height: 250px; left: -50px; }
+  .carte { transform: none; }
+}
+
 /* Le choix de langue : discret, en haut a droite, hors du chemin de lecture. */
 .langues {
   position: absolute; top: 26px; right: 24px; display: flex; gap: 2px;
@@ -151,6 +259,7 @@ footer {
 </nav>
 
 <header>
+  <div class="halo" aria-hidden="true"></div>
   <div class="logotype">
     <!-- L'etoile a quatre branches de l'icone, cotes concaves. -->
     <svg viewBox="-1 -1 2 2" aria-hidden="true">
@@ -166,7 +275,31 @@ footer {
   <span id="taille"></span> <span data-t="rien-installer"></span></p>
 </header>
 
-<div class="avertissement">
+<div class="scene" aria-hidden="true">
+  <div class="carte">
+    <div class="barre-onglets">
+      <div class="onglet actif">YouTube</div>
+      <div class="onglet">Twitch</div>
+      <div class="onglet">+</div>
+    </div>
+    <div class="barre-adresse">
+      <svg width="13" height="13" viewBox="-1 -1 2 2">
+        <path fill="#a78bfa"
+              d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/>
+      </svg>
+      <div class="pilule">youtube.com/watch</div>
+    </div>
+    <div class="video">
+      <div class="lecteur">
+        <div class="curseur"><i></i></div>
+        <div class="duree"><span>12:04</span><span>31:47</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="legende" data-t="legende"></p>
+
+<div class="avertissement monte">
   <h2 data-t="avert-titre"></h2>
   <p data-t="avert-intro"></p>
 
@@ -181,8 +314,8 @@ footer {
   <p data-t="avert-exclusion"></p>
 </div>
 
-<h2 data-t="traits-titre"></h2>
-<ul class="traits">
+<h2 data-t="traits-titre" class="monte"></h2>
+<ul class="traits monte">
   <li><b data-t="t1"></b><span data-t="t1d"></span></li>
   <li><b data-t="t2"></b><span data-t="t2d"></span></li>
   <li><b data-t="t3"></b><span data-t="t3d"></span></li>
@@ -191,8 +324,8 @@ footer {
   <li><b data-t="t6"></b><span data-t="t6d"></span></li>
 </ul>
 
-<h2 data-t="vie-privee-titre"></h2>
-<p data-t="vie-privee"></p>
+<h2 data-t="vie-privee-titre" class="monte"></h2>
+<p data-t="vie-privee" class="monte"></p>
 
 <footer>
   <p><span data-t="pied"></span> <span id="version"></span></p>
@@ -214,7 +347,7 @@ var TEXTES = {
     accroche: "A browser that plays video with mpv instead of the site's own player: less memory, no ads, and the picture stays right where it was in the page.",
     telecharger: "Download for Windows",
     exigences: "Windows 10 (1809) or 11 ·",
-    "rien-installer": "· nothing else to install",
+    "rien-installer": "nothing else to install",
     "avert-titre": "Windows will complain. That is expected, and here is why",
     "avert-intro": "Plume is not signed by any certificate. A code signing certificate costs several hundred euros a year, and Plume is a free project made for a handful of people. So Windows does not know its publisher, and says so.",
     "avert-bleu-titre": "Blue window, “Windows protected your PC”",
@@ -239,6 +372,7 @@ var TEXTES = {
     t6d: "Python, mpv, Deno and yt-dlp are in the package. The only prerequisite, shipped with Windows 11: the WebView2 runtime.",
     "vie-privee-titre": "Privacy",
     "vie-privee": "Plume sends nothing anywhere. History, bookmarks, cookies and playback positions are files in the profil/ subfolder, on your own machine; deleting them is enough to forget everything. The only request Plume makes on its own is a version check, once a day, to this page, and it stops entirely if you empty manifeste_maj in config.json.",
+    legende: "The picture stays in the page. mpv does the decoding.",
     pied: "Plume is a personal project, distributed as is, without warranty.",
     version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
     taille: function (mo) { return mo + " MB ·"; },
@@ -249,7 +383,7 @@ var TEXTES = {
     accroche: "Un navigateur qui joue les vidéos avec mpv au lieu du lecteur du site : moins de mémoire, pas de publicité, et l'image reste là où elle était dans la page.",
     telecharger: "Télécharger pour Windows",
     exigences: "Windows 10 (1809) ou 11 ·",
-    "rien-installer": "· rien à installer en plus",
+    "rien-installer": "rien à installer en plus",
     "avert-titre": "Windows va se plaindre. C'est normal, et voici pourquoi",
     "avert-intro": "Plume n'est signée par aucun certificat. Un certificat de signature coûte plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.",
     "avert-bleu-titre": "Fenêtre bleue, « Windows a protégé votre ordinateur »",
@@ -274,6 +408,7 @@ var TEXTES = {
     t6d: "Python, mpv, Deno et yt-dlp sont dans le paquet. Seul prérequis, présent d'origine sur Windows 11 : le runtime WebView2.",
     "vie-privee-titre": "Vie privée",
     "vie-privee": "Plume ne renvoie rien nulle part. L'historique, les favoris, les cookies et les positions de lecture sont des fichiers dans le sous-dossier profil/, sur votre machine ; les supprimer suffit à tout oublier. La seule requête que Plume émet d'elle-même est une vérification de version, une fois par jour, vers cette page, et elle se coupe en vidant manifeste_maj dans config.json.",
+    legende: "L'image reste dans la page. C'est mpv qui la décode.",
     pied: "Plume est un projet personnel, distribué tel quel, sans garantie.",
     version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
     taille: function (mo) { return mo + " Mo ·"; },
@@ -350,6 +485,58 @@ fetch("version.json", { cache: "no-store" })
   .then(function (r) { return r.json(); })
   .then(function (m) { manifeste = m; remplir(); })
   .catch(function () { /* la page reste lisible sans le manifeste */ });
+
+// --- Le relief ------------------------------------------------------------
+// La classe est posee par le script : sans JavaScript, les sections restent
+// visibles au lieu de disparaitre en attendant une animation qui ne viendra
+// pas.
+(function () {
+  var doux = window.matchMedia
+    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (doux) { return; }
+  document.documentElement.className += " js";
+
+  // Les sections montent quand elles approchent du bas de la fenetre.
+  if (window.IntersectionObserver) {
+    var guetteur = new IntersectionObserver(function (entrees) {
+      for (var i = 0; i < entrees.length; i++) {
+        if (entrees[i].isIntersecting) {
+          entrees[i].target.classList.add("vu");
+          guetteur.unobserve(entrees[i].target);
+        }
+      }
+    }, { rootMargin: "0px 0px -12% 0px" });
+    var montants = document.querySelectorAll(".monte");
+    for (var j = 0; j < montants.length; j++) { guetteur.observe(montants[j]); }
+  } else {
+    // Navigateur sans guetteur : on montre tout, plutot que rien.
+    document.documentElement.className =
+      document.documentElement.className.replace(" js", "");
+  }
+
+  // Parallaxe : quelques degres sur l'etincelle, suivant la souris. Bornee,
+  // et seulement sur un pointeur fin : sur un ecran tactile elle n'aurait
+  // aucun sens, et le survol y reste colle apres le doigt.
+  var etoile = document.querySelector(".logotype svg");
+  var fin = window.matchMedia && window.matchMedia("(pointer: fine)").matches;
+  if (etoile && fin) {
+    var enAttente = false;
+    window.addEventListener("mousemove", function (e) {
+      if (enAttente) { return; }
+      enAttente = true;
+      window.requestAnimationFrame(function () {
+        enAttente = false;
+        var dx = (e.clientX / window.innerWidth - 0.5) * 2;
+        var dy = (e.clientY / window.innerHeight - 0.5) * 2;
+        etoile.style.transform =
+          "perspective(600px) rotateY(" + (dx * 9).toFixed(2) + "deg)"
+          + " rotateX(" + (-dy * 9).toFixed(2) + "deg)"
+          + " translate(" + (dx * 5).toFixed(1) + "px,"
+          + (dy * 4).toFixed(1) + "px)";
+      });
+    });
+  }
+})();
 
 // --- L'intro --------------------------------------------------------------
 // Elle ne se joue qu'a l'arrivee. Revenir en arriere, ou recharger pour relire

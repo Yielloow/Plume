@@ -5,11 +5,12 @@
   "nb_resultats": 14,
   "miniatures": true,
   "cookies_navigateur": true,
-  "mpv_extra": [],
   "youtube_client": "",
-  "solveur_distant": true,
+  "mpv_extra": [],
   "veille_onglets": 90,
   "intro": true,
   "glissement_onglets": true,
-  "manifeste_maj": "https://yielloow.github.io/Plume/version.json"
+  "langue": "auto",
+  "manifeste_maj": "https://yielloow.github.io/Plume/version.json",
+  "solveur_distant": true
 }

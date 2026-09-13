@@ -24,8 +24,38 @@ local reglages = {
     fps = 60,
     qualite = 1080,
     toujours = false,    -- ne jamais masquer la barre : mise au point du rendu
+    langue = "fr",       -- celle de Plume, transmise au lancement
 }
 opts.read_options(reglages, "plume")
+
+-- --------------------------------------------------------------------------
+-- Les phrases du lecteur, dans les deux langues
+-- --------------------------------------------------------------------------
+-- Cinq phrases : un dictionnaire ici coute moins cher que de les faire
+-- traverser le tube depuis Plume a chaque ouverture. Une cle absente renvoie
+-- la cle elle-meme, pour qu'un oubli se voie a l'ecran plutot que de faire
+-- tomber la barre au milieu d'une video.
+local PHRASES = {
+    fr = {
+        auto = "Automatique",
+        normale = "Normale",
+        piste = "piste ",
+        aucune_piste = "Aucune piste disponible",
+        passage = "Passage en ",
+    },
+    en = {
+        auto = "Automatic",
+        normale = "Normal",
+        piste = "track ",
+        aucune_piste = "No track available",
+        passage = "Switching to ",
+    },
+}
+
+local function dit(cle)
+    local table_langue = PHRASES[reglages.langue] or PHRASES.en
+    return table_langue[cle] or PHRASES.en[cle] or cle
+end
 
 -- --------------------------------------------------------------------------
 -- Palette, reprise de interface.py. En ASS une couleur s'ecrit a l'envers,
@@ -247,7 +277,7 @@ end
 -- Menus
 -- --------------------------------------------------------------------------
 local function liste_qualites()
-    local items = {{titre = "Automatique", valeur = 0}}
+    local items = {{titre = dit("auto"), valeur = 0}}
     for _, h in ipairs({2160, 1440, 1080, 720, 480, 360}) do
         items[#items + 1] = {titre = h .. "p", valeur = h}
     end
@@ -261,7 +291,8 @@ local function liste_vitesses()
     local items = {}
     for _, v in ipairs({0.5, 0.75, 1, 1.25, 1.5, 1.75, 2}) do
         items[#items + 1] = {
-            titre = (v == 1) and "Normale" or (tostring(v):gsub("%.", ",") .. "x"),
+            titre = (v == 1) and dit("normale")
+                    or (tostring(v):gsub("%.", ",") .. "x"),
             valeur = v,
             actif = math.abs(etat.vitesse - v) < 0.01,
         }
@@ -278,7 +309,7 @@ local function liste_pistes(genre)
     local courant = mp.get_property(genre == "sub" and "sid" or "aid")
     for _, p in ipairs(etat.pistes) do
         if p.type == genre then
-            local nom = p.lang or p.title or ("piste " .. tostring(p.id))
+            local nom = p.lang or p.title or (dit("piste") .. tostring(p.id))
             if p.title and p.lang then nom = p.lang .. " - " .. p.title end
             items[#items + 1] = {
                 titre = nom,
@@ -288,7 +319,7 @@ local function liste_pistes(genre)
         end
     end
     if #items == 0 or (genre == "sub" and #items == 1) then
-        items[#items + 1] = {titre = "Aucune piste disponible", inerte = true}
+        items[#items + 1] = {titre = dit("aucune_piste"), inerte = true}
     end
     return items
 end
@@ -314,7 +345,7 @@ local function appliquer_qualite(hauteur)
     local pos = mp.get_property_number("time-pos") or 0
     local en_pause = mp.get_property_bool("pause")
     etat.chargement = (hauteur == 0) and "Qualite automatique..."
-                      or ("Passage en " .. hauteur .. "p...")
+                      or (dit("passage") .. hauteur .. "p...")
 
     mp.set_property("options/ytdl-format", format)
     -- La position est reprise dans le gestionnaire `file-loaded` plutot que par

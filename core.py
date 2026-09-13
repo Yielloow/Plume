@@ -43,6 +43,9 @@ DEFAULT_CONFIG = {
     # Glissement de la page en changeant d'onglet. C'est le geste le plus
     # frequent d'un navigateur : si l'animation gene, ce reglage la coupe.
     "glissement_onglets": True,
+    # Langue de l'interface : "fr", "en", ou "auto" pour suivre celle de
+    # Windows. L'installateur y ecrit le choix fait a l'installation.
+    "langue": "auto",
     # Adresse du fichier version.json publie a cote du telechargement. Vide,
     # Plume n'interroge rien : pas de depot, pas de requete.
     "manifeste_maj": "https://yielloow.github.io/Plume/version.json",
@@ -875,7 +878,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -973,3 +976,132 @@ def chercher_mise_a_jour(url_manifeste, maintenant=None, lecteur=None):
     if manifeste is None:
         return None
     return manifeste if version_plus_recente(manifeste["version"]) else None
+
+
+# --------------------------------------------------------------------------
+# Langue de l'interface
+# --------------------------------------------------------------------------
+import langues as _langues            # noqa: E402  (apres DEFAULT_CONFIG)
+
+LANGUES = ("fr", "en")
+
+
+def langue_systeme():
+    """La langue de Windows, ramenee a celles que Plume parle.
+
+    Tout ce qui n'est pas du francais donne de l'anglais : c'est la langue de
+    repli, pas une preference. Un utilisateur allemand lira l'anglais, ce qui
+    vaut mieux qu'un francais qu'il ne lit pas.
+    """
+    try:
+        import ctypes
+        # La langue de l'INTERFACE de Windows, pas le format regional : on
+        # veut savoir dans quelle langue la personne lit, pas comment elle
+        # ecrit ses dates.
+        nom = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+        return "fr" if (nom & 0x3FF) == 0x0C else "en"   # 0x0C = francais
+    except Exception:
+        pass
+    try:
+        import locale
+        code = (locale.getdefaultlocale()[0] or "")
+        return "fr" if code.lower().startswith("fr") else "en"
+    except Exception:
+        return "en"
+
+
+def langue():
+    """La langue a employer maintenant."""
+    choix = str(CONFIG.get("langue", "auto") or "auto").lower()
+    if choix in LANGUES:
+        return choix
+    return langue_systeme()
+
+
+def t(cle, *args):
+    """Le texte de cette cle, dans la langue en cours.
+
+    Une cle absente renvoie la cle elle-meme plutot que de lever : une phrase
+    manquante doit se voir a l'ecran, pas faire tomber la fenetre qui allait
+    l'afficher.
+    """
+    table = _langues.TEXTES.get(langue()) or _langues.TEXTES["en"]
+    texte = table.get(cle)
+    if texte is None:
+        texte = _langues.TEXTES["en"].get(cle, cle)
+    if not args:
+        return texte
+    try:
+        return texte % args
+    except (TypeError, ValueError):
+        return texte
+
+
+def marques_pluriel(cle, nombre):
+    """Les marques de pluriel qu'attend cette phrase, dans cette langue.
+
+    Le francais accorde le nom ET l'adjectif, l'anglais le nom seul : la meme
+    phrase n'a donc pas le meme nombre de trous d'une langue a l'autre.
+    """
+    combien = _langues.PLURIELS.get(cle, {}).get(langue(), 1)
+    marque = "" if abs(nombre) <= 1 else "s"
+    return tuple([marque] * combien)
+
+
+def definir_langue(code):
+    """Change la langue et l'enregistre. Vrai si le reglage a change."""
+    code = str(code or "").lower()
+    if code not in LANGUES and code != "auto":
+        return False
+    if CONFIG.get("langue") == code:
+        return False
+    CONFIG["langue"] = code
+    try:
+        CONFIG_FILE.write_text(
+            json.dumps(CONFIG, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+    except Exception:
+        return False
+    return True
+
+
+def ouvrir_reglages_defaut():
+    """Ouvre la page de Windows ou l'on choisit son navigateur par defaut.
+
+    Plume ne peut pas se designer elle-meme, et aucun programme ne le peut :
+    depuis Windows 10, l'association des protocoles http et https n'est
+    modifiable que par un choix explicite de l'utilisateur, dans les
+    Parametres. L'ecrire directement dans le registre ne fonctionne pas, et
+    ferait de Plume un logiciel qui force la main.
+
+    Ce qu'on fait a la place : l'installateur declare Plume dans
+    RegisteredApplications, ce qui la fait APPARAITRE dans la liste, et ce
+    lien emmene sur la bonne page, Plume deja designee.
+    """
+    import subprocess
+    for adresse in ("ms-settings:defaultapps?registeredAppUser=Plume",
+                    "ms-settings:defaultapps"):
+        try:
+            subprocess.Popen(["cmd", "/c", "start", "", adresse],
+                             creationflags=CREATE_NO_WINDOW)
+            return True
+        except Exception:
+            continue
+    return False
+
+
+def est_navigateur_par_defaut():
+    """Vrai si Windows confie deja les liens https a Plume.
+
+    On lit l'association reelle plutot que nos propres cles : declarer Plume
+    ne la rend pas choisie, et afficher « c'est fait » alors que ce n'est pas
+    le cas serait le pire des deux mondes.
+    """
+    try:
+        import winreg
+        chemin = ("Software\\Microsoft\\Windows\\Shell\\Associations"
+                  "\\UrlAssociations\\https\\UserChoice")
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, chemin) as cle:
+            return winreg.QueryValueEx(cle, "ProgId")[0] == "PlumeHTML"
+    except Exception:
+        return False

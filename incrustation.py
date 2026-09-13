@@ -230,6 +230,9 @@ class Incrustation:
             # Un live arrive par un tube : sa qualite se regle du cote de
             # streamlink, pas de mpv, donc le menu correspondant est masque.
             "--script-opts-append=plume-live=" + ("yes" if live else "no"),
+            # mpv est un autre processus : il ne lit pas notre configuration,
+            # la langue doit donc voyager par la ligne de commande.
+            "--script-opts-append=plume-langue=" + core.langue(),
             "--script-opts-append=plume-qualite=%d"
             % int(core.CONFIG.get("qualite_max", 1080)),
             "--script-opts-append=plume-fps=%d"

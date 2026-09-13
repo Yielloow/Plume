@@ -283,7 +283,7 @@ def _echapper_js(texte):
 
 
 MODELE_ACCUEIL = """<!doctype html>
-<html lang="fr"><head><meta charset="utf-8"><title>Plume</title>
+<html lang="%(langue_page)s"><head><meta charset="utf-8"><title>Plume</title>
 <style>
  :root { color-scheme: dark; }
  body { margin:0; min-height:100vh; display:flex; flex-direction:column;
@@ -328,18 +328,38 @@ MODELE_ACCUEIL = """<!doctype html>
  footer { position:fixed; bottom:26px; text-align:center; color:#8f8f9e;
           font-size:12px; line-height:1.7; max-width:min(640px,86vw); }
  footer b { color:#d6d6e0; font-weight:600; }
+ .reglages { position:fixed; top:18px; right:20px; display:flex; gap:14px;
+             align-items:center; font-size:12px; color:#8f8f9e; }
+ .reglages button { background:none; border:1px solid transparent;
+                    color:#8f8f9e; font:inherit; padding:4px 9px;
+                    border-radius:7px; cursor:pointer; }
+ .reglages button:hover { color:#fbfbfe; }
+ .reglages button[aria-pressed="true"] { color:#fbfbfe; background:#26252f;
+                                         border-color:#3a3944; }
+ .reglages .defaut { border:1px solid #3a3944; border-radius:8px;
+                     padding:6px 12px; }
+ .reglages .defaut:hover { border-color:#7c5cff; color:#fbfbfe; }
+ .reglages .defaut[disabled] { border-color:#3a3944; color:#6f6e7c;
+                               cursor:default; }
 </style></head><body>
+ <div class="reglages">
+   <button class="defaut" id="defaut" onclick="devenirDefaut()"%(desactive)s
+           title="%(defaut_aide)s">%(defaut)s</button>
+   <span>%(langue_nom)s</span>
+   <button data-langue="fr" aria-pressed="%(fr_choisie)s"
+           onclick="changerLangue('fr')">FR</button>
+   <button data-langue="en" aria-pressed="%(en_choisie)s"
+           onclick="changerLangue('en')">EN</button>
+ </div>
  <h1>Plume<span>.</span></h1>
  <form onsubmit="chercher(event)">
-   <input id="q" placeholder="Rechercher, ou saisir une adresse" autocomplete="off">
+   <input id="q" placeholder="%(recherche)s" autocomplete="off">
  </form>
  %(tuiles)s
 %(travaux)s
  <footer>
-   <b>%(pubs)d</b> requete%(s)s publicitaire%(s)s refusee%(s)s depuis le lancement.<br>
-   Plume n'a pas de serveur : rien ne remonte vers son auteur, il n'y a pas de
-   compte ni de synchronisation. Vos favoris, vos cookies et cette page vivent
-   dans un dossier de votre disque.
+   %(pied_pubs)s<br>
+   %(pied_vie_privee)s
  </footer>
 <script>
  var moteur = "%(moteur)s";
@@ -352,6 +372,12 @@ MODELE_ACCUEIL = """<!doctype html>
  function retirerTravail(e, nom) {
    e.stopPropagation();
    poster({type:"travail", action:"supprimer", nom:nom});
+ }
+ function changerLangue(code) {
+   poster({type:"reglage", cle:"langue", valeur:code});
+ }
+ function devenirDefaut() {
+   poster({type:"reglage", cle:"defaut"});
  }
  function chercher(e) {
    e.preventDefault();
@@ -2675,18 +2701,53 @@ class Navigateur(Form):
                    "c": "#%02x%02x%02x" % (couleur.R, couleur.G, couleur.B),
                    "nom": _echapper(groupe["nom"]),
                    "n": nombre, "s": "s" if nombre > 1 else ""})
-        return ('<p class="titre-section">Groupes de travail</p>'
+        return ('<p class="titre-section">%s</p>' % _echapper(
+                    core.t("accueil_groupes")) +
                 '<div class="travaux">%s</div>' % "".join(morceaux))
+
+    def appliquer_langue(self):
+        """Rejoue l'interface dans la nouvelle langue, sans redemarrer.
+
+        La barre d'onglets et les menus se redessinent a la demande, il suffit
+        donc de les invalider. La page d'accueil, elle, est un fichier : il
+        faut la reecrire, et recharger les onglets qui l'affichent.
+        """
+        for fenetre in list(FENETRES):
+            try:
+                fenetre.ecrire_accueil()
+                fenetre.barre_onglets.Invalidate()
+                fenetre.barre_nav.Invalidate()
+                for onglet in fenetre.onglets:
+                    if onglet.url == ACCUEIL:
+                        noyau = onglet.vue.CoreWebView2
+                        if noyau is not None:
+                            noyau.Reload()
+            except Exception as e:
+                journal("changement de langue : %s" % e)
 
     def ecrire_accueil(self):
         """Reecrit la page d'accueil avec les favoris et le compteur du moment."""
         try:
+            langue = core.langue()
+            deja = core.est_navigateur_par_defaut()
             page = MODELE_ACCUEIL % {
                 "moteur": _echapper(core.CONFIG.get("moteur_recherche", "")),
                 "tuiles": self._tuiles_favoris(),
                 "travaux": self._cartes_travail(),
-                "pubs": self.pubs_bloquees,
-                "s": "" if self.pubs_bloquees == 1 else "s",
+                "langue_page": langue,
+                "recherche": _echapper(core.t("accueil_recherche")),
+                "langue_nom": _echapper(core.t("accueil_langue")),
+                "fr_choisie": "true" if langue == "fr" else "false",
+                "en_choisie": "true" if langue == "en" else "false",
+                "defaut": _echapper(core.t("accueil_defaut_fait") if deja
+                                    else core.t("accueil_defaut")),
+                "defaut_aide": _echapper(core.t("accueil_defaut_aide")),
+                "desactive": " disabled" if deja else "",
+                "pied_pubs": _echapper(
+                    core.t("accueil_pubs", self.pubs_bloquees,
+                           *core.marques_pluriel("accueil_pubs",
+                                                 self.pubs_bloquees))),
+                "pied_vie_privee": _echapper(core.t("accueil_vie_privee")),
             }
             core.FICHIER_ACCUEIL.parent.mkdir(parents=True, exist_ok=True)
             core.FICHIER_ACCUEIL.write_text(page, encoding="utf-8")
@@ -2956,7 +3017,7 @@ class Navigateur(Form):
             cle = onglet.url.rstrip("/")
             groupe["onglets"] = [o for o in groupe["onglets"]
                                  if (o["url"] or "").rstrip("/") != cle]
-            self.signaler("Retire de « %s »." % nom, erreur=False)
+            self.signaler(core.t("retire_de", nom), erreur=False)
         elif len(groupe["onglets"]) >= core.MAX_ONGLETS_TRAVAIL:
             self.signaler("« %s » contient deja %d onglets : c'est le maximum, "
                           "les rouvrir tous doit rester tenable."
@@ -2965,7 +3026,7 @@ class Navigateur(Form):
         else:
             groupe["onglets"].append({"url": onglet.url,
                                       "titre": onglet.titre or onglet.url})
-            self.signaler("Ajoute a « %s »." % nom, erreur=False)
+            self.signaler(core.t("ajoute_a", nom), erreur=False)
         self.enregistrer_travail()
 
     def creer_groupe_travail(self, onglet=None):
@@ -2977,7 +3038,7 @@ class Navigateur(Form):
             return
         self.recharger_travail()
         if core.groupe_travail(self.travail, nom) is not None:
-            self.signaler("Un groupe « %s » existe deja." % nom)
+            self.signaler(core.t("groupe_existe", nom))
             return
         self.travail.append({"nom": nom, "couleur": len(self.travail),
                              "onglets": []})
@@ -3025,21 +3086,21 @@ class Navigateur(Form):
             nom = groupe["nom"]
             dedans = rangeable and self.dans_groupe(groupe, onglet.url)
             items.append({
-                "texte": ("Retirer de « %s »" if dedans
-                          else "Ajouter a « %s »") % nom,
+                "texte": core.t("menu_retirer_de" if dedans
+                                else "menu_ajouter_a", nom),
                 "coche": dedans,
                 "actif": rangeable,
                 "action": (lambda o=onglet, n=nom:
                            self.ajouter_au_travail(o, n)) if rangeable
                 else None,
             })
-        items.append({"texte": "Nouveau groupe de travail...",
+        items.append({"texte": core.t("menu_nouveau_groupe"),
                       "action": lambda o=onglet: self.creer_groupe_travail(
                           o if rangeable else None)})
         items.append({"separateur": True, "texte": ""})
-        items.append({"texte": "Fermer l'onglet",
+        items.append({"texte": core.t("menu_fermer"),
                       "action": lambda o=onglet: self.fermer(o)})
-        items.append({"texte": "Fermer les autres onglets",
+        items.append({"texte": core.t("menu_fermer_autres"),
                       "action": lambda o=onglet: self.fermer_les_autres(o)})
         self.ouvrir_menu(items, ecran_x, ecran_y)
 
@@ -3885,6 +3946,16 @@ class Navigateur(Form):
             else:
                 self.ouvrir_groupe_travail(nom)
             return
+        if genre == "reglage":
+            # Demande venue de la page d'accueil, qui est un fichier local a
+            # nous : elle n'a pas d'autre moyen de parler a l'application.
+            cle = str(message.get("cle") or "")
+            if cle == "langue":
+                if core.definir_langue(str(message.get("valeur") or "")):
+                    self.appliquer_langue()
+            elif cle == "defaut":
+                core.ouvrir_reglages_defaut()
+            return
         if genre != "zone":
             journal("msg %s | actif=%s | %s"
                     % (genre, onglet is self.actif,
@@ -3994,8 +4065,7 @@ class Navigateur(Form):
             return journal("recherche de mise a jour : %s" % e)
         if not manifeste:
             return
-        texte = ("Plume %s est disponible. Page de telechargement dans les "
-                 "favoris." % manifeste["version"])
+        texte = core.t("maj_disponible", manifeste["version"])
         try:
             self.Invoke(Action(lambda: self.signaler(texte, erreur=False)))
         except Exception as e:

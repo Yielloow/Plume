@@ -11,6 +11,7 @@ session du compte Google. Le distribuer reviendrait a donner l'acces au compte.
 
 Usage : python outils\\construire.py
 """
+import ast
 import datetime
 import hashlib
 import importlib.util
@@ -35,8 +36,8 @@ TRAVAIL = Path(os.environ.get("TEMP", ".")) / "plume-build"
 
 # Fichiers du projet a embarquer tels quels
 SOURCES = ["navigateur.py", "interface.py", "incrustation.py", "core.py",
-           "plume.py", "barre_taches.py", "osc.lua", "config.json",
-           "README.md"]
+           "langues.py", "plume.py", "barre_taches.py", "osc.lua",
+           "config.json", "README.md"]
 
 INTERDITS = {"profil", "cookies.txt", "diagnostic.txt", "__pycache__"}
 
@@ -112,6 +113,35 @@ def ecrire_empreintes(dossier):
     return len(lignes) - 8
 
 
+def modules_oublies():
+    """Modules du projet importes par une source, mais absents de SOURCES.
+
+    Un fichier ajoute au projet et oublie ici donne un paquet qui se construit
+    sans rien dire et tombe au demarrage chez celui qui le recoit. La
+    verification coute une lecture de chaque source et ferme la porte.
+    """
+    embarques = {n[:-3] for n in SOURCES if n.endswith(".py")}
+    du_projet = {f.stem for f in RACINE.glob("*.py")}
+    manquants = set()
+    for nom in SOURCES:
+        if not nom.endswith(".py"):
+            continue
+        try:
+            arbre = ast.parse((RACINE / nom).read_text(encoding="utf-8"))
+        except (OSError, SyntaxError):
+            continue
+        for noeud in ast.walk(arbre):
+            vises = []
+            if isinstance(noeud, ast.Import):
+                vises = [a.name.split(".")[0] for a in noeud.names]
+            elif isinstance(noeud, ast.ImportFrom) and noeud.level == 0:
+                vises = [(noeud.module or "").split(".")[0]]
+            for vise in vises:
+                if vise in du_projet and vise not in embarques:
+                    manquants.add("%s (importe par %s)" % (vise, nom))
+    return sorted(manquants)
+
+
 def construire():
     if SORTIE.exists():
         shutil.rmtree(SORTIE, ignore_errors=True)
@@ -156,6 +186,26 @@ def construire():
     interne = SORTIE / "Plume" / "_internal"
     dossier = SORTIE / "Plume"
     journal("compile dans %s" % dossier)
+
+    # L'installateur ecrit la langue choisie dans config.json en passant par
+    # une chaine d'octets : le fichier doit donc rester en pur ASCII, sinon
+    # les accents en ressortiraient abimes. On le verifie plutot que de
+    # l'esperer.
+    brut = (RACINE / "config.json").read_bytes()
+    try:
+        brut.decode("ascii")
+    except UnicodeDecodeError:
+        print("   config.json contient des caracteres non ASCII, arret :")
+        print("     l'installateur les abimerait en y ecrivant la langue")
+        return False
+
+    oublies = modules_oublies()
+    if oublies:
+        print("   DES MODULES DU PROJET NE SERAIENT PAS EMBARQUES, arret :")
+        for m in oublies:
+            print("     " + m)
+        print("   -> les ajouter a SOURCES dans outils/construire.py")
+        return False
 
     print("2. copie du code de Plume")
     for nom in SOURCES:
