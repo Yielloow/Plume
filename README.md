@@ -1064,6 +1064,27 @@ commande si.
 Le repli, quand la commande est introuvable, reste la comparaison de nom :
 elle vaut mieux que rien.
 
+### Un groupe porte ses couleurs
+
+Un groupe recevait une teinte d'office, selon son rang de creation. On la
+choisit maintenant, et on peut en prendre deux : la carte devient alors un
+degrade de l'une a l'autre, ce qui distingue les groupes d'un coup d'oeil
+mieux qu'une pastille de six pixels.
+
+Deux au maximum. Au dela, un degrade cesse de se lire comme une couleur et
+devient un motif.
+
+Le champ `couleurs` s'ajoute a `couleur` sans le remplacer : un fichier deja
+ecrit reste lisible, et une version anterieure qui le relirait y retrouve son
+compte. Une liste absente ou abimee retombe sur la teinte d'origine.
+
+**Un piege du gabarit.** La page d'accueil est composee par un format `%(cle)s`
+de Python : un `%` isole dans le style CSS y est pris pour le debut d'une
+marque, et toute la page cesse d'etre ecrite. `width:100%` et
+`border-radius:50%` doivent donc s'y ecrire avec deux pourcents. L'erreur etait
+avalee par le `try` de `ecrire_accueil` et ne laissait qu'une ligne de journal :
+la page restait simplement celle d'avant, sans que rien ne le dise.
+
 ### La mise a jour en un bouton, et ce qu'elle refuse
 
 Le bandeau porte un bouton. Un clic, et Plume telecharge l'installeur annonce,

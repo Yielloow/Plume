@@ -106,7 +106,11 @@ est rangee. Le meme menu permet d'ajouter d'autres pages au groupe, ou
 de les en retirer.
 
 Sur la page d'accueil, chaque groupe est une carte : un clic rouvre
-toutes ses pages d'un coup, la croix supprime le groupe. Un groupe
+toutes ses pages d'un coup, la croix supprime le groupe.
+
+Cliquez la pastille de couleur pour choisir la teinte du groupe. Deux
+teintes au lieu d'une, et la carte prend le degrade de l'une a l'autre :
+de quoi reconnaitre ses groupes d'un coup d'oeil. Un groupe
 « dev » vous remet donc au travail en un geste, tous les matins.
 
 Une page deja ouverte n'est pas ouverte deux fois, et un groupe est

@@ -322,6 +322,7 @@ MODELE_ACCUEIL = """<!doctype html>
  .titre-section { color:#8f8f9e; font-size:12px; letter-spacing:1.4px;
                   text-transform:uppercase; margin:0 0 -14px; }
  .travail { position:relative; display:flex; align-items:center; gap:11px;
+            flex-wrap:wrap;
             padding:13px 42px 13px 16px; border-radius:12px;
             background:#1c1b22; border:1px solid #2b2a33; cursor:pointer;
             min-width:168px; text-align:left; color:#d6d6e0;
@@ -336,6 +337,18 @@ MODELE_ACCUEIL = """<!doctype html>
                      color:#8f8f9e; font-size:14px; line-height:1;
                      cursor:pointer; }
  .travail .retirer:hover { background:#52515f; color:#fbfbfe; }
+ .travail .pastille { cursor:pointer; }
+ .travail .palette { display:none; width:100%%; gap:6px; margin-top:8px;
+                     padding-top:8px; border-top:1px solid #3a3944;
+                     align-items:center; }
+ .travail.ouverte .palette { display:flex; }
+ .palette .teinte { width:18px; height:18px; border-radius:50%%;
+                    border:2px solid transparent; cursor:pointer; padding:0; }
+ .palette .teinte.prise { border-color:#fbfbfe; }
+ .palette .valider { margin-left:auto; background:#7c5cff; color:#fff;
+                     border:0; border-radius:6px; width:24px; height:22px;
+                     cursor:pointer; font-size:12px; line-height:1; }
+ .palette .valider:hover { background:#8f74ff; }
  footer { position:fixed; bottom:26px; text-align:center; color:#8f8f9e;
           font-size:12px; line-height:1.7; max-width:min(640px,86vw); }
  footer b { color:#d6d6e0; font-weight:600; }
@@ -390,6 +403,34 @@ MODELE_ACCUEIL = """<!doctype html>
  function retirerTravail(e, nom) {
    e.stopPropagation();
    poster({type:"travail", action:"supprimer", nom:nom});
+ }
+ function ouvrirPalette(e, pastille) {
+   e.stopPropagation();
+   pastille.closest(".travail").classList.toggle("ouverte");
+ }
+ function choisirTeinte(e, bouton) {
+   e.stopPropagation();
+   var palette = bouton.parentNode;
+   var prises = palette.querySelectorAll(".teinte.prise");
+   if (bouton.classList.contains("prise")) {
+     if (prises.length > 1) { bouton.classList.remove("prise"); }
+   } else {
+     // Deux au maximum : la plus ancienne cede sa place, sans quoi il
+     // faudrait deselectionner avant de selectionner.
+     if (prises.length >= 2) { prises[0].classList.remove("prise"); }
+     bouton.classList.add("prise");
+   }
+ }
+ function validerTeintes(e, nom) {
+   e.stopPropagation();
+   var palette = e.target.parentNode;
+   var indices = [];
+   palette.querySelectorAll(".teinte.prise").forEach(function (b) {
+     indices.push(parseInt(b.dataset.i, 10));
+   });
+   if (indices.length) {
+     poster({type:"travail", action:"couleurs", nom:nom, indices:indices});
+   }
  }
  function changerLangue(code) {
    poster({type:"reglage", cle:"langue", valeur:code});
@@ -2740,26 +2781,86 @@ class Navigateur(Form):
             return ('<p class="vide">Aucun groupe de travail. Clic droit sur '
                     'un onglet pour en creer un : il rouvrira toutes ses pages '
                     'd\'un seul geste.</p>')
+        def teinte(indice):
+            c = ui.couleur_groupe(indice)
+            return "#%02x%02x%02x" % (c.R, c.G, c.B)
+
         morceaux = []
         for groupe in self.travail:
-            couleur = ui.couleur_groupe(groupe["couleur"])
+            choisies = groupe.get("couleurs") or [groupe["couleur"]]
+            # Une seule teinte donne un aplat, deux donnent un degrade. Le
+            # fond reste tres pale : la carte doit se distinguer, pas crier.
+            if len(choisies) > 1:
+                fond = ("linear-gradient(115deg,%s33,%s33)"
+                        % (teinte(choisies[0]), teinte(choisies[1])))
+                bord = teinte(choisies[1])
+            else:
+                fond = "%s22" % teinte(choisies[0])
+                bord = teinte(choisies[0])
+            pastilles = "".join(
+                '<button class="teinte%(actif)s" style="background:%(c)s" '
+                'data-i="%(i)d" onclick="choisirTeinte(event,this)" '
+                'title="%(t)s"></button>'
+                % {"c": teinte(i), "i": i,
+                   "actif": " prise" if i in choisies else "",
+                   "t": _echapper(core.t("accueil_teinte"))}
+                for i in range(core.NB_COULEURS_GROUPE))
             nombre = len(groupe["onglets"])
             morceaux.append(
                 '<div class="travail" role="button" tabindex="0" '
+                'style="background:%(fond)s;border-color:%(bord)s55" '
                 'onclick="ouvrirTravail(%(js)s)">'
-                '<span class="pastille" style="background:%(c)s"></span>'
+                '<span class="pastille" style="background:%(c)s" '
+                'title="%(tp)s" onclick="ouvrirPalette(event,this)"></span>'
                 '<span>%(nom)s</span>'
                 '<span class="compte">%(n)d page%(s)s</span>'
-                '<button class="retirer" title="Supprimer ce groupe" '
+                '<button class="retirer" title="%(ts)s" '
                 'onclick="retirerTravail(event, %(js)s)">\u2715</button>'
+                '<div class="palette" onclick="event.stopPropagation()">'
+                '%(pastilles)s'
+                '<button class="valider" onclick="validerTeintes(event,%(js)s)"'
+                ' title="%(tv)s">\u2713</button>'
+                '</div>'
                 '</div>'
                 % {"js": _echapper_js(groupe["nom"]),
-                   "c": "#%02x%02x%02x" % (couleur.R, couleur.G, couleur.B),
+                   "c": teinte(choisies[0]), "fond": fond, "bord": bord,
                    "nom": _echapper(groupe["nom"]),
-                   "n": nombre, "s": "s" if nombre > 1 else ""})
+                   "n": nombre, "s": "s" if nombre > 1 else "",
+                   "pastilles": pastilles,
+                   "tp": _echapper(core.t("accueil_changer_teinte")),
+                   "ts": _echapper(core.t("accueil_supprimer_groupe")),
+                   "tv": _echapper(core.t("accueil_valider_teintes"))})
         return ('<p class="titre-section">%s</p>' % _echapper(
                     core.t("accueil_groupes")) +
                 '<div class="travaux">%s</div>' % "".join(morceaux))
+
+    def definir_couleurs_travail(self, nom, indices):
+        """Retient les teintes choisies pour ce groupe.
+
+        Une ou deux, pas plus : au dela, un degrade cesse de se lire comme une
+        couleur et devient un motif.
+        """
+        propres = []
+        for i in list(indices)[:2]:
+            try:
+                propres.append(int(i) % core.NB_COULEURS_GROUPE)
+            except (TypeError, ValueError):
+                pass
+        if not propres:
+            return False
+        self.recharger_travail()
+        for groupe in self.travail:
+            if groupe["nom"] == nom:
+                groupe["couleurs"] = propres
+                groupe["couleur"] = propres[0]
+                self.enregistrer_travail()
+                for fenetre in list(FENETRES):
+                    try:
+                        fenetre.ecrire_accueil()
+                    except Exception:
+                        pass
+                return True
+        return False
 
     def appliquer_langue(self):
         """Rejoue l'interface dans la nouvelle langue, sans redemarrer.
@@ -3106,6 +3207,8 @@ class Navigateur(Form):
             self.signaler(core.t("groupe_existe", nom))
             return
         self.travail.append({"nom": nom, "couleur": len(self.travail),
+                             "couleurs": [len(self.travail)
+                                          % core.NB_COULEURS_GROUPE],
                              "onglets": []})
         self.enregistrer_travail()
         if onglet is not None:
@@ -4006,6 +4109,11 @@ class Navigateur(Form):
             # nous : elle n'a pas d'autre moyen de parler a l'application.
             nom = str(message.get("nom") or "")
             journal("travail : %s %r" % (message.get("action"), nom))
+            if message.get("action") == "couleurs":
+                indices = message.get("indices")
+                if isinstance(indices, list):
+                    self.definir_couleurs_travail(nom, indices)
+                return
             if message.get("action") == "supprimer":
                 self.supprimer_groupe_travail(nom)
             else:

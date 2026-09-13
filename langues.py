@@ -44,6 +44,9 @@ TEXTES = {
         "accueil_recherche": "Rechercher, ou saisir une adresse",
         "accueil_groupes": "Groupes de travail",
         "accueil_supprimer_groupe": "Supprimer ce groupe",
+        "accueil_changer_teinte": "Changer les couleurs du groupe",
+        "accueil_teinte": "Choisir cette couleur",
+        "accueil_valider_teintes": "Valider",
         "accueil_pubs": "%d requete%s publicitaire%s refusee%s depuis le "
                         "lancement",
         "accueil_defaut": "Faire de Plume le navigateur par defaut",
@@ -102,6 +105,9 @@ TEXTES = {
         "accueil_recherche": "Search, or type an address",
         "accueil_groupes": "Work groups",
         "accueil_supprimer_groupe": "Delete this group",
+        "accueil_changer_teinte": "Change the group colours",
+        "accueil_teinte": "Pick this colour",
+        "accueil_valider_teintes": "Apply",
         "accueil_pubs": "%d advertising request%s refused since launch",
         "accueil_defaut": "Make Plume the default browser",
         "accueil_defaut_aide": "Windows lets no program appoint itself: this "

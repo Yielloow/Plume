@@ -381,10 +381,21 @@ def position_reprise(positions, cle):
     return float(position)
 
 
+# Le nombre de teintes de la palette, repris de interface.COULEURS_GROUPE.
+# Declare ici pour que la lecture du fichier ne depende pas du module de
+# dessin : `core` doit pouvoir etre lu sans interface graphique.
+NB_COULEURS_GROUPE = 6
+
+
 def charger_groupes_travail():
     """Groupes de travail : nom, couleur, et les adresses a rouvrir.
 
-    Forme : [{"nom": str, "couleur": int, "onglets": [{"url", "titre"}]}].
+    Forme : [{"nom": str, "couleur": int, "couleurs": [int],
+              "onglets": [{"url", "titre"}]}].
+
+    `couleurs` porte une ou deux teintes choisies ; `couleur` reste ecrit a
+    cote, pour qu'une version anterieure relisant ce fichier y retrouve son
+    compte.
     Un groupe est une habitude, pas une session : on y range les pages qu'on
     rouvre chaque fois qu'on se remet a la meme chose.
     """
@@ -412,7 +423,21 @@ def charger_groupes_travail():
             couleur = int(brut.get("couleur") or 0)
         except (TypeError, ValueError):
             couleur = 0
-        propres.append({"nom": nom, "couleur": couleur, "onglets": onglets})
+        # Une ou deux teintes, toujours ramenees dans la palette. Un
+        # fichier ancien n'a que `couleur` : elle devient la premiere.
+        brutes = brut.get("couleurs")
+        if not isinstance(brutes, list):
+            brutes = [couleur]
+        couleurs = []
+        for c in brutes[:2]:
+            try:
+                couleurs.append(int(c) % NB_COULEURS_GROUPE)
+            except (TypeError, ValueError):
+                pass
+        if not couleurs:
+            couleurs = [couleur % NB_COULEURS_GROUPE]
+        propres.append({"nom": nom, "couleur": couleurs[0],
+                        "couleurs": couleurs, "onglets": onglets})
     return propres
 
 
@@ -882,7 +907,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
