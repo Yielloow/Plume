@@ -239,6 +239,16 @@ user32.SendMessageW.restype = ctypes.c_longlong
 HTMAXBUTTON = 9
 MONITOR_AU_PLUS_PRES = 2
 
+# La bordure que Windows 11 dessine autour des fenetres redimensionnables.
+# Elle n'appartient pas a la zone client : seul le gestionnaire de fenetres
+# peut la changer, et seulement par cet attribut.
+dwmapi = ctypes.WinDLL("dwmapi", use_last_error=True)
+dwmapi.DwmSetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_uint,
+                                         ctypes.c_void_p, ctypes.c_uint]
+dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
+DWMWA_BORDER_COLOR = 34
+DWMWA_COLOR_NONE = 0xFFFFFFFE
+
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
@@ -465,6 +475,32 @@ def ecrire_positions(force=False):
         return
     _POSITIONS_ECRITES[0] = maintenant
     core.enregistrer_positions(_POSITIONS[0])
+
+
+def _couleur_win32(couleur):
+    """Une couleur .NET en COLORREF, soit 0x00BBGGRR et non l'inverse."""
+    return (couleur.B << 16) | (couleur.G << 8) | couleur.R
+
+
+def teinter_bordure(poignee, couleur=None):
+    """Donne a la bordure systeme la couleur voulue, ou l'efface.
+
+    Renvoie vrai si le gestionnaire de fenetres a accepte. Il refuse sur les
+    Windows anterieurs a 11, ou l'attribut n'existe pas : ce n'est pas une
+    erreur, il n'y a simplement pas de bordure a teindre.
+
+    On ne peut pas relire la couleur posee : `DwmGetWindowAttribute` rejette
+    cet attribut, qui est en ecriture seule. Mesure faite. Le code de retour de
+    l'ecriture est donc la seule verification possible.
+    """
+    valeur = ctypes.c_uint(DWMWA_COLOR_NONE if couleur is None
+                           else _couleur_win32(couleur))
+    try:
+        return dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(poignee), DWMWA_BORDER_COLOR,
+            ctypes.byref(valeur), ctypes.sizeof(valeur)) == 0
+    except Exception:
+        return False
 
 
 def _resultat(tache):
@@ -4282,6 +4318,12 @@ class Navigateur(Form):
             user32.SetWindowPos(poignee, None, 0, 0, 0, 0,
                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
                                 | SWP_NOACTIVATE | SWP_FRAMECHANGED)
+            # WS_THICKFRAME ramene la bordure claire de Windows 11, qui change
+            # de teinte selon que la fenetre est active. On lui donne celle de
+            # Plume, plutot que de la supprimer : sans arete franche, une
+            # fenetre sombre se confond avec ce qu'il y a derriere.
+            teinter_bordure(self.Handle.ToInt64(),
+                            ui.BORD_PRIVE if self.privee else ui.BORD_FENETRE)
         except Exception as e:
             journal("accrochage : %s" % e)
 
