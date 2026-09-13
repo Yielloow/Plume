@@ -23,21 +23,41 @@
 #endif
 #define MonEditeur "Plume"
 #define MonExe "Plume.exe"
+; Doit rester identique a APPID dans navigateur.py : c'est ce qui lie
+; l'epingle a la fenetre.
+#define MonAppID "Plume.Navigateur"
+
+; Une construction d'essai porte une identite distincte. Sans cela, installer
+; une version de test ecrase l'entree de registre de la vraie installation, et
+; la desinstaller l'emporte : Plume disparait des applications installees
+; d'une machine ou elle etait en place. C'est arrive.
+;   ISCC /DESSAI=1 outils\plume.iss
+#ifdef ESSAI
+  #define MonId "{{2F7A9C10-51B4-4D63-A0E8-6C1937D5B4A2}"
+  #define MonNomComplet "Plume (essai)"
+#else
+  #define MonId "{{8C4D1E2A-6B3F-4A7C-9E15-2D8F0A5B7C31}"
+  #define MonNomComplet "Plume"
+#endif
 
 [Setup]
-AppId={{8C4D1E2A-6B3F-4A7C-9E15-2D8F0A5B7C31}
-AppName={#MonNom}
+AppId={#MonId}
+AppName={#MonNomComplet}
 AppVersion={#MaVersion}
-AppVerName={#MonNom} {#MaVersion}
+AppVerName={#MonNomComplet} {#MaVersion}
 AppPublisher={#MonEditeur}
-DefaultDirName={autopf}\{#MonNom}
-DefaultGroupName={#MonNom}
+DefaultDirName={autopf}\{#MonNomComplet}
+DefaultGroupName={#MonNomComplet}
 DisableProgramGroupPage=yes
 ; Installation par utilisateur : pas de demande d'elevation, donc une
 ; alerte de moins. Le dossier part alors dans %LOCALAPPDATA%\Programs.
 PrivilegesRequired=lowest
 OutputDir=..\..\Plume-paquet
-OutputBaseFilename=Plume-{#MaVersion}-installeur
+#ifdef ESSAI
+  OutputBaseFilename=Plume-{#MaVersion}-essai
+#else
+  OutputBaseFilename=Plume-{#MaVersion}-installeur
+#endif
 SetupIconFile=..\icone\plume.ico
 UninstallDisplayIcon={app}\{#MonExe}
 ; Compression forte : le paquet pese 166 Mo en zip, l'essentiel etant mpv,
@@ -114,9 +134,16 @@ Root: HKCU; Subkey: "Software\RegisteredApplications"; \
     Flags: uninsdeletevalue
 
 [Icons]
-Name: "{group}\{#MonNom}"; Filename: "{app}\{#MonExe}"
+; AppUserModelID : c'est lui qui permet a Windows de rapprocher l'epingle de
+; la fenetre ouverte. Sans lui, Plume se declare sous « Plume.Navigateur »
+; pendant que le raccourci ne se declare sous rien : le systeme ne peut pas
+; deviner qu'il s'agit du meme programme, et ouvre un second bouton a cote de
+; l'epingle. La valeur doit rester identique a APPID dans navigateur.py.
+Name: "{group}\{#MonNom}"; Filename: "{app}\{#MonExe}"; \
+    AppUserModelID: "{#MonAppID}"
 Name: "{group}\Desinstaller {#MonNom}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MonNom}"; Filename: "{app}\{#MonExe}"; Tasks: bureau
+Name: "{autodesktop}\{#MonNom}"; Filename: "{app}\{#MonExe}"; \
+    AppUserModelID: "{#MonAppID}"; Tasks: bureau
 
 [Run]
 Filename: "{app}\{#MonExe}"; Description: "Lancer {#MonNom}"; \
