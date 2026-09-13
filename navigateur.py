@@ -248,7 +248,12 @@ dwmapi.DwmSetWindowAttribute.argtypes = [ctypes.c_void_p, ctypes.c_uint,
                                          ctypes.c_void_p, ctypes.c_uint]
 dwmapi.DwmSetWindowAttribute.restype = ctypes.c_long
 DWMWA_BORDER_COLOR = 34
+DWMWA_CAPTION_COLOR = 35
 DWMWA_COLOR_NONE = 0xFFFFFFFE
+# Le cadre sombre. 20 depuis Windows 10 20H1, 19 avant : on tente les deux,
+# le refus de l'un n'etant pas une erreur.
+DWMWA_MODE_SOMBRE = 20
+DWMWA_MODE_SOMBRE_ANCIEN = 19
 
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOOLWINDOW = 0x00000080
@@ -522,6 +527,37 @@ def ecrire_positions(force=False):
 def _couleur_win32(couleur):
     """Une couleur .NET en COLORREF, soit 0x00BBGGRR et non l'inverse."""
     return (couleur.B << 16) | (couleur.G << 8) | couleur.R
+
+
+def _poser_attribut(poignee, attribut, valeur):
+    """Pose un attribut entier sur la fenetre. Vrai si le systeme accepte."""
+    brut = ctypes.c_uint(valeur)
+    try:
+        return dwmapi.DwmSetWindowAttribute(
+            ctypes.c_void_p(poignee), attribut,
+            ctypes.byref(brut), ctypes.sizeof(brut)) == 0
+    except Exception:
+        return False
+
+
+def habiller_cadre(poignee, bordure, fond):
+    """Donne au cadre systeme les couleurs de Plume, avant tout dessin.
+
+    Trois attributs, pour trois morceaux que nous ne peignons pas :
+
+    - la bordure, sinon claire et changeante selon que la fenetre est active ;
+    - la zone de titre, qui apparaissait en bandeau clair a l'ouverture, le
+      temps que notre premier dessin la recouvre ;
+    - le mode sombre, qui accorde le reste du cadre au theme de Plume.
+
+    Aucun de ces morceaux n'appartient a la zone client : ni notre dessin ni
+    WM_NCCALCSIZE ne les atteignent, seuls ces attributs les changent.
+    """
+    if not _poser_attribut(poignee, DWMWA_MODE_SOMBRE, 1):
+        _poser_attribut(poignee, DWMWA_MODE_SOMBRE_ANCIEN, 1)
+    _poser_attribut(poignee, DWMWA_CAPTION_COLOR, _couleur_win32(fond))
+    return _poser_attribut(poignee, DWMWA_BORDER_COLOR,
+                           _couleur_win32(bordure))
 
 
 def teinter_bordure(poignee, couleur=None):
@@ -4597,12 +4633,14 @@ class Navigateur(Form):
             user32.SetWindowPos(poignee, None, 0, 0, 0, 0,
                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER
                                 | SWP_NOACTIVATE | SWP_FRAMECHANGED)
-            # WS_THICKFRAME ramene la bordure claire de Windows 11, qui change
-            # de teinte selon que la fenetre est active. On lui donne celle de
-            # Plume, plutot que de la supprimer : sans arete franche, une
-            # fenetre sombre se confond avec ce qu'il y a derriere.
-            teinter_bordure(self.Handle.ToInt64(),
-                            ui.BORD_PRIVE if self.privee else ui.BORD_FENETRE)
+            # WS_THICKFRAME ramene le cadre de Windows 11 : bordure claire
+            # et changeante, et une zone de titre qui apparait en bandeau clair
+            # le temps de notre premier dessin. On habille les deux, plutot que
+            # de les supprimer : sans arete franche, une fenetre sombre se
+            # confond avec ce qu'il y a derriere.
+            habiller_cadre(self.Handle.ToInt64(),
+                           ui.BORD_PRIVE if self.privee else ui.BORD_FENETRE,
+                           ui.FOND_ONGLETS)
         except Exception as e:
             journal("accrochage : %s" % e)
 

@@ -1064,6 +1064,33 @@ commande si.
 Le repli, quand la commande est introuvable, reste la comparaison de nom :
 elle vaut mieux que rien.
 
+### Le cadre systeme, ce qu'on ne peint pas
+
+Trois morceaux de la fenetre n'appartiennent pas a la zone client : ni notre
+dessin ni WM_NCCALCSIZE ne les atteignent, et seuls les attributs du
+gestionnaire de fenetres les changent.
+
+**La bordure**, ramenee par WS_THICKFRAME quand on a rendu la fenetre
+accrochable : claire, et changeante selon que la fenetre est active, d'ou
+l'impression qu'elle apparaissait et disparaissait.
+
+**La zone de titre**, qui se montrait en bandeau clair a l'ouverture et
+s'effacait des qu'on passait la souris dessus. Ce n'etait pas la souris qui
+l'effacait : le gestionnaire la peint avec sa couleur par defaut avant que
+Plume ait dessine, et le premier repeint la recouvrait. Bouger la souris
+declenchait ce repeint.
+
+**Le mode sombre du cadre**, qui accorde le reste au theme de Plume.
+L'attribut vaut 20 depuis Windows 10 20H1, 19 avant : on tente les deux, le
+refus de l'un n'etant pas une erreur.
+
+On les habille plutot que de les supprimer : sans arete franche, une fenetre
+sombre se confond avec ce qu'il y a derriere.
+
+A savoir : `DwmGetWindowAttribute` refuse de relire ces couleurs, l'attribut
+etant en ecriture seule. Le code de retour de l'ecriture est la seule
+verification possible.
+
 ### Un groupe porte ses couleurs
 
 Un groupe recevait une teinte d'office, selon son rang de creation. On la
