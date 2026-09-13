@@ -1064,6 +1064,28 @@ commande si.
 Le repli, quand la commande est introuvable, reste la comparaison de nom :
 elle vaut mieux que rien.
 
+### On demande au shell, on ne lit pas une cle
+
+La verification du navigateur par defaut lisait `UserChoice`. Cette cle n'est
+qu'un des elements que Windows consulte, et elle peut dire une chose pendant
+que les Parametres en affichent une autre : c'est arrive, la cle annoncait
+Brave alors que les liens s'ouvraient bel et bien avec Plume.
+
+`AssocQueryString` pose la question telle que Windows se la pose en ouvrant un
+lien : elle traverse toute la resolution, ProgID, UserChoice, capacites
+declarees et valeurs par defaut. C'est elle qui fait autorite.
+
+La lecture du registre reste en second, si l'appel echoue : une reponse
+imparfaite vaut mieux que pas de reponse. Et `OpenWith.exe` est traite a part,
+c'est la reponse de Windows quand aucun programme n'est designe.
+
+**Ce que cet episode a coute, et la lecon.** Le diagnostic a dure une heure
+parce que les lectures de registre faites depuis l'outillage de developpement
+ne refletaient pas l'etat de la machine : trois sources donnaient trois
+reponses differentes. Le test qui a tranche en trente secondes etait le plus
+bete, ouvrir un lien et regarder ce qui s'ouvre. Quand une mesure contredit ce
+que la personne voit a l'ecran, c'est la mesure qu'il faut suspecter d'abord.
+
 ### Le bouton suit l'etat reel, sans qu'on ait a y penser
 
 La page d'accueil est un fichier, ecrit a certains moments seulement, et le

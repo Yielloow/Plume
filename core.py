@@ -882,7 +882,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1137,17 +1137,62 @@ def _commande_du_progid(progid):
     return ""
 
 
+def _exe_associe(protocole):
+    """L'executable que le shell designe pour ce protocole, ou une chaine vide.
+
+    C'est la question que Windows se pose quand on clique un lien, posee telle
+    quelle. Elle traverse toute sa resolution, alors que lire une cle n'en
+    regarde qu'un morceau.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+        shlwapi = ctypes.WinDLL("shlwapi", use_last_error=True)
+        shlwapi.AssocQueryStringW.argtypes = [
+            ctypes.c_uint, ctypes.c_uint, wintypes.LPCWSTR, wintypes.LPCWSTR,
+            wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)]
+        shlwapi.AssocQueryStringW.restype = ctypes.c_long
+        ASSOCF_IS_PROTOCOL = 0x00001000
+        ASSOCSTR_EXECUTABLE = 2
+        taille = wintypes.DWORD(1024)
+        tampon = ctypes.create_unicode_buffer(1024)
+        if shlwapi.AssocQueryStringW(ASSOCF_IS_PROTOCOL, ASSOCSTR_EXECUTABLE,
+                                     protocole, None, tampon,
+                                     ctypes.byref(taille)) != 0:
+            return ""
+        return tampon.value or ""
+    except Exception:
+        return ""
+
+
+def _meme_fichier(un, autre):
+    """Vrai si ces deux chemins designent le meme programme."""
+    try:
+        return (os.path.normcase(os.path.abspath(str(un)))
+                == os.path.normcase(os.path.abspath(str(autre))))
+    except Exception:
+        return False
+
+
 def est_navigateur_par_defaut():
     """Vrai si les liens https s'ouvrent avec CET executable.
 
-    On ne compare pas un nom de ProgID : deux copies de Plume lisent le meme
-    registre, et celle qui n'est pas installee repondrait oui a tort. On
-    resout la commande reellement associee au protocole, et on regarde si
-    elle designe notre propre programme.
+    On demande au shell, pas au registre : la cle `UserChoice` n'est qu'un des
+    elements de sa resolution, et elle a deja dit une chose pendant que les
+    Parametres en affichaient une autre.
 
-    Annoncer « c'est fait » alors que les liens partent ailleurs serait le
-    pire des deux mondes : la personne cesserait de chercher.
+    Le registre sert de repli quand l'appel echoue : une reponse imparfaite
+    vaut mieux que pas de reponse.
+
+    Annoncer « c'est fait » alors que les liens partent ailleurs serait le pire
+    des deux mondes : la personne cesserait de chercher.
     """
+    exe = _exe_associe("https")
+    # OpenWith.exe est la reponse de Windows quand aucun programme n'est
+    # designe : ce n'est pas un navigateur, c'est le selecteur.
+    if exe and not exe.lower().endswith("openwith.exe"):
+        return _meme_fichier(exe, EXECUTABLE)
+
     try:
         import winreg
         chemin = (r"Software\Microsoft\Windows\Shell\Associations"
@@ -1158,15 +1203,10 @@ def est_navigateur_par_defaut():
         return False
     if not progid:
         return False
-    exe = _exe_de_commande(_commande_du_progid(progid))
-    if not exe:
-        # Commande introuvable : on retombe sur le nom, qui vaut mieux que rien.
+    depuis_cle = _exe_de_commande(_commande_du_progid(progid))
+    if not depuis_cle:
         return str(progid) == "PlumeHTML"
-    try:
-        return (os.path.normcase(os.path.abspath(exe))
-                == os.path.normcase(os.path.abspath(str(EXECUTABLE))))
-    except Exception:
-        return False
+    return _meme_fichier(depuis_cle, EXECUTABLE)
 
 
 def _porte_une_icone(chemin):
