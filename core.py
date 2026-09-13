@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
     "glissement_onglets": True,
     # Adresse du fichier version.json publie a cote du telechargement. Vide,
     # Plume n'interroge rien : pas de depot, pas de requete.
-    "manifeste_maj": "https://plume-nav.github.io/plume-nav/version.json",
+    "manifeste_maj": "https://yielloow.github.io/Plume/version.json",
 }
 
 # Profil de la vue de navigation, au format Chromium : yt-dlp sait y lire les
