@@ -190,6 +190,9 @@ class Incrustation:
         self.tuyau = None            # chemin du tube IPC
         self._visible = False
         self._zone = None
+        # Nul ne se montre sans y avoir ete autorise. Faux au depart : c'est
+        # `replacer`, cote navigateur, qui donne le droit a l'onglet regarde.
+        self._permis = False
         self._decoupe = None
         self._avec_cookies = False   # premiere tentative : sans la session
         self._titre = None
@@ -675,6 +678,17 @@ class Incrustation:
             self.placer(*self._zone)
 
     # ------------------------------------------------------------------
+    def autoriser(self, permis):
+        """Donne ou retire a ce lecteur le droit de se montrer.
+
+        Le droit n'appartient qu'a l'onglet regarde. Sans lui, `placer` retient
+        la zone sans rien afficher : la geometrie reste a jour pour le jour ou
+        l'onglet redevient celui qu'on regarde.
+        """
+        self._permis = bool(permis)
+        if not self._permis:
+            self.cacher()
+
     def placer(self, x, y, largeur, hauteur, bornes=None):
         """Positionne le lecteur, en coordonnees ECRAN.
 
@@ -686,6 +700,11 @@ class Incrustation:
         self._zone = (x, y, largeur, hauteur, bornes)
         if not self.fenetre or self.plein_ecran:
             return
+        # La zone vient d'etre retenue : on peut refuser l'affichage sans rien
+        # perdre. Ce refus est ce qui empeche la fenetre mpv, ouverte apres un
+        # changement d'onglet, de se poser sur la page d'a cote.
+        if not self._permis:
+            return self.cacher()
         x, y, largeur, hauteur = int(x), int(y), int(largeur), int(hauteur)
         if largeur < 40 or hauteur < 30:
             return self.cacher()

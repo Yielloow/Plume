@@ -343,6 +343,12 @@ MODELE_ACCUEIL = """<!doctype html>
                      cursor:pointer; }
  .travail .retirer:hover { background:#52515f; color:#fbfbfe; }
  .travail .pastille { cursor:pointer; }
+ .travail .icones { display:flex; align-items:center; margin-left:2px; }
+ .travail .icones img { width:16px; height:16px; border-radius:4px;
+                        background:#2b2a33; margin-left:-5px;
+                        border:1.5px solid #1c1b22; }
+ .travail .icones img:first-child { margin-left:0; }
+ .travail .icones .reste { margin-left:4px; font-size:11px; color:#8f8f9e; }
  .travail .palette { display:none; width:100%%; gap:6px; margin-top:8px;
                      padding-top:8px; border-top:1px solid #3a3944;
                      align-items:center; }
@@ -577,6 +583,36 @@ def teinter_bordure(poignee, couleur=None):
         return dwmapi.DwmSetWindowAttribute(
             ctypes.c_void_p(poignee), DWMWA_BORDER_COLOR,
             ctypes.byref(valeur), ctypes.sizeof(valeur)) == 0
+    except Exception:
+        return False
+
+
+# Repeindre : invalider, y compris le cadre, et ne pas attendre le prochain
+# tour de boucle pour le faire.
+RDW_INVALIDATE = 0x0001
+RDW_ERASE = 0x0004
+RDW_ALLCHILDREN = 0x0080
+RDW_UPDATENOW = 0x0100
+RDW_FRAME = 0x0400
+
+
+def rafraichir_cadre(poignee):
+    """Force Windows a repeindre la fenetre entiere, cadre compris.
+
+    A la fin du fondu d'ouverture, WS_EX_LAYERED est retire et la premiere
+    ligne de pixels garde la teinte claire du cadre par defaut : la fenetre a
+    pourtant dessine la bonne couleur, mesure faite avec `PrintWindow`, c'est
+    l'affichage qui reste en retard. Le trait partait des qu'on bougeait la
+    souris, parce que le survol declenche ce repeint. On le declenche ici.
+
+    RDW_ERASE est indispensable : sans lui, rien ne change. Mesure faite en
+    essayant les drapeaux un a un sur la fenetre ouverte. C'est l'effacement
+    du fond qui repeint la marge, l'invalidation seule n'y suffit pas.
+    """
+    try:
+        return bool(user32.RedrawWindow(
+            ctypes.c_void_p(poignee), None, None,
+            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_UPDATENOW))
     except Exception:
         return False
 
@@ -2806,6 +2842,41 @@ class Navigateur(Form):
                     '</p>')
         return '<div class="tuiles">%s</div>' % "".join(morceaux)
 
+    def _icones_groupe(self, onglets, combien=3):
+        """Les icones des premieres pages du groupe, superposees.
+
+        Trois au plus : au dela, la rangee deviendrait une frise et on ne
+        reconnaitrait plus rien. Ce qui depasse est dit par un nombre, qui se
+        lit plus vite que quatre icones de seize pixels.
+
+        Les icones sont incluses en base64 plutot que liees : une page file://
+        n'a pas toujours le droit de lire d'autres fichiers locaux.
+        """
+        vues, morceaux = set(), []
+        for onglet in onglets:
+            hote = core.hote(onglet.get("url") or "")
+            if not hote or hote in vues:
+                continue
+            vues.add(hote)
+            chemin = core.DOSSIER_FAVICONS / (hote + ".png")
+            if not chemin.exists():
+                continue
+            try:
+                donnees = base64.b64encode(chemin.read_bytes()).decode()
+            except Exception:
+                continue
+            morceaux.append('<img src="data:image/png;base64,%s" alt="" '
+                            'title="%s">' % (donnees, _echapper(hote)))
+            if len(morceaux) >= combien:
+                break
+        if not morceaux:
+            return ""
+        reste = max(0, len(onglets) - len(morceaux))
+        # Le nombre restant n'apparait qu'a partir de deux : « +1 » coute
+        # autant de place qu'une icone de plus et en dit moins.
+        surplus = ('<span class="reste">+%d</span>' % reste) if reste > 1 else ""
+        return '<span class="icones">%s%s</span>' % ("".join(morceaux), surplus)
+
     def _cartes_travail(self):
         """Groupes de travail, en cartes cliquables.
 
@@ -2824,15 +2895,18 @@ class Navigateur(Form):
         morceaux = []
         for groupe in self.travail:
             choisies = groupe.get("couleurs") or [groupe["couleur"]]
-            # Une seule teinte donne un aplat, deux donnent un degrade. Le
-            # fond reste tres pale : la carte doit se distinguer, pas crier.
+            # Le degrade se tient autour de la pastille, pas sur toute la
+            # carte : la ou il s'etalait, il concurrencait le nom du groupe.
+            # La carte garde son fond, avec un bord teinte pour la rattacher.
             if len(choisies) > 1:
-                fond = ("linear-gradient(115deg,%s33,%s33)"
-                        % (teinte(choisies[0]), teinte(choisies[1])))
-                bord = teinte(choisies[1])
+                pastille = ("linear-gradient(135deg,%s,%s)"
+                            % (teinte(choisies[0]), teinte(choisies[1])))
+                halo = teinte(choisies[1])
             else:
-                fond = "%s22" % teinte(choisies[0])
-                bord = teinte(choisies[0])
+                pastille = teinte(choisies[0])
+                halo = teinte(choisies[0])
+            fond = "#1c1b22"
+            bord = teinte(choisies[0])
             pastilles = "".join(
                 '<button class="teinte%(actif)s" style="background:%(c)s" '
                 'data-i="%(i)d" onclick="choisirTeinte(event,this)" '
@@ -2846,9 +2920,11 @@ class Navigateur(Form):
                 '<div class="travail" role="button" tabindex="0" '
                 'style="background:%(fond)s;border-color:%(bord)s55" '
                 'onclick="ouvrirTravail(%(js)s)">'
-                '<span class="pastille" style="background:%(c)s" '
+                '<span class="pastille" style="background:%(c)s;'
+                'box-shadow:0 0 0 3px %(halo)s33" '
                 'title="%(tp)s" onclick="ouvrirPalette(event,this)"></span>'
                 '<span>%(nom)s</span>'
+                '%(icones)s'
                 '<span class="compte">%(n)d page%(s)s</span>'
                 '<button class="retirer" title="%(ts)s" '
                 'onclick="retirerTravail(event, %(js)s)">\u2715</button>'
@@ -2859,7 +2935,8 @@ class Navigateur(Form):
                 '</div>'
                 '</div>'
                 % {"js": _echapper_js(groupe["nom"]),
-                   "c": teinte(choisies[0]), "fond": fond, "bord": bord,
+                   "c": pastille, "fond": fond, "bord": bord, "halo": halo,
+                   "icones": self._icones_groupe(groupe["onglets"]),
                    "nom": _echapper(groupe["nom"]),
                    "n": nombre, "s": "s" if nombre > 1 else "",
                    "pastilles": pastilles,
@@ -3155,6 +3232,14 @@ class Navigateur(Form):
                     self.Opacity = cible
                 except Exception:
                     pass
+                # Revenir a l'opacite pleine retire WS_EX_LAYERED, et Windows
+                # laisse alors la premiere ligne de pixels a la teinte claire
+                # du cadre par defaut. Un repeint remet notre couleur.
+                if cible >= 1.0:
+                    try:
+                        rafraichir_cadre(self.Handle.ToInt64())
+                    except Exception:
+                        pass
                 if apres is not None:
                     apres()
                 return
@@ -3638,7 +3723,7 @@ class Navigateur(Form):
             o.vue.Visible = bool(o is onglet
                                  or (sens != 0 and o is sortant))
             if o is not onglet:
-                o.incrustation.cacher()     # de cote, mais toujours vivante
+                o.incrustation.autoriser(False)   # de cote, mais vivante
                 # Le compteur repart d'ici : c'est maintenant que cet onglet
                 # commence a ne plus etre regarde.
                 o.derniere_activite = time.time()
@@ -4335,10 +4420,11 @@ class Navigateur(Form):
                 dire(core.t("maj_telechargement", part))
 
         dire(core.t("maj_telechargement", 0))
-        chemin = core.telecharger_mise_a_jour(manifeste, progression=avancement)
+        chemin, raison = core.telecharger_mise_a_jour(
+            manifeste, progression=avancement)
         if chemin is None:
             self._maj_en_cours = False
-            return dire(core.t("maj_echec"))
+            return dire(core.t("maj_echec_%s" % (raison or "reseau")))
 
         # Le compte a rebours : rien ne commence sans qu'on ait pu l'arreter.
         for reste in range(DUREE_AVANT_MAJ, 0, -1):
@@ -4556,7 +4642,7 @@ class Navigateur(Form):
         l, h = int(message.get("l", 0)), int(message.get("h", 0))
         if not l or not h:
             onglet.zone_page = None
-            return onglet.incrustation.cacher()
+            return onglet.incrustation.autoriser(False)
         onglet.zone_page = (int(message.get("x", 0)), int(message.get("y", 0)),
                             l, h)
         try:
@@ -4580,7 +4666,7 @@ class Navigateur(Form):
         # premier niveau : rien dans la pile des fenetres ne l'empecherait de
         # couvrir la page d'un autre onglet, ni meme d'une autre application.
         if onglet is not self.actif:
-            return onglet.incrustation.cacher()
+            return onglet.incrustation.autoriser(False)
         # Tant que la fenetre n'est pas entierement opaque, le lecteur reste
         # cache. Sa fenetre est de premier niveau : elle ne suit pas le fondu
         # et arrivait donc franche par-dessus une page encore transparente,
@@ -4589,7 +4675,7 @@ class Navigateur(Form):
         try:
             if (self.Opacity < 0.99 or self._glisse_page is not None
                     or self._chute is not None):
-                return onglet.incrustation.cacher()
+                return onglet.incrustation.autoriser(False)
         except Exception:
             pass
         try:
@@ -4600,6 +4686,7 @@ class Navigateur(Form):
         x, y, l, h = onglet.zone_page
         bornes = (origine.X, origine.Y,
                   origine.X + taille.Width, origine.Y + taille.Height)
+        onglet.incrustation.autoriser(True)
         onglet.incrustation.placer(origine.X + x, origine.Y + y, l, h, bornes)
 
     # ------------------------------------------------------------------

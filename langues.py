@@ -77,8 +77,14 @@ TEXTES = {
         "maj_annuler": "Annuler",
         "maj_annulee": "Mise a jour annulee.",
         "maj_lancement": "Installation en cours, Plume va se rouvrir.",
-        "maj_echec": "La mise a jour n'a pas pu etre verifiee. Rien n'a ete "
-                     "installe : passez par le site.",
+        "maj_echec_reseau": "La mise a jour n'a pas pu etre telechargee. "
+                            "Elle n'est peut-etre pas encore en ligne : "
+                            "reessayez plus tard.",
+        "maj_echec_empreinte": "Le fichier recu ne correspond pas a celui qui "
+                               "a ete publie. Rien n'a ete installe, et il a "
+                               "ete efface.",
+        "maj_echec_manifeste": "L'annonce de mise a jour est illisible. Rien "
+                               "n'a ete installe.",
     },
     "en": {
         "telecharge": "Downloaded: %s  (in %s)",
@@ -93,7 +99,7 @@ TEXTES = {
         "groupe_supprime": "Group “%s” deleted. Open tabs stay open.",
         "groupe_vide": "Group “%s” holds no page yet: right-click a "
                        "tab to file it there.",
-        "groupe_ouvert": "“%s”: %d tab%s opened%s.",
+        "groupe_ouvert": "“%s”: %d tab%s opened.",
         "zoom": "Zoom %d %% on %s",
         "trop_fenetres": "Plume opens at most %d windows: every window costs "
                          "memory.",
@@ -134,8 +140,13 @@ TEXTES = {
         "maj_annuler": "Cancel",
         "maj_annulee": "Update cancelled.",
         "maj_lancement": "Installing, Plume will reopen.",
-        "maj_echec": "The update could not be verified. Nothing was "
-                     "installed: please use the website.",
+        "maj_echec_reseau": "The update could not be downloaded. It may not "
+                            "be online yet: please try again later.",
+        "maj_echec_empreinte": "The file received does not match the one that "
+                               "was published. Nothing was installed, and it "
+                               "has been deleted.",
+        "maj_echec_manifeste": "The update announcement is unreadable. "
+                               "Nothing was installed.",
     },
 }
 
