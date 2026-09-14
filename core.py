@@ -907,7 +907,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.8"
+VERSION = "1.0.9"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1077,6 +1077,35 @@ def marques_pluriel(cle, nombre):
     return tuple([marque] * combien)
 
 
+def ecrire_config():
+    """Enregistre la configuration telle qu'elle est en memoire.
+
+    Vrai si le fichier a bien ete ecrit. Un echec n'arrete rien : le reglage
+    reste actif pour la session en cours, il sera simplement oublie a la
+    fermeture, ce qui vaut mieux qu'une fenetre qui tombe.
+    """
+    try:
+        CONFIG_FILE.write_text(
+            json.dumps(CONFIG, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def definir_reglage(cle, valeur):
+    """Change un reglage et l'enregistre. Vrai si quelque chose a change.
+
+    La langue garde sa propre fonction : en changer demande aussi de reecrire
+    les pages deja affichees, ce qui ne regarde pas ce module.
+    """
+    if CONFIG.get(cle) == valeur:
+        return False
+    CONFIG[cle] = valeur
+    ecrire_config()
+    return True
+
+
 def definir_langue(code):
     """Change la langue et l'enregistre. Vrai si le reglage a change."""
     code = str(code or "").lower()
@@ -1085,13 +1114,7 @@ def definir_langue(code):
     if CONFIG.get("langue") == code:
         return False
     CONFIG["langue"] = code
-    try:
-        CONFIG_FILE.write_text(
-            json.dumps(CONFIG, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8")
-    except Exception:
-        return False
-    return True
+    return ecrire_config()
 
 
 def ouvrir_reglages_defaut():

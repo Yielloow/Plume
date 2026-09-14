@@ -541,6 +541,52 @@ def etoile(graphiques, couleur, cx, cy, rayon, pleine=True,
     p.Dispose()
 
 
+def roue_dentee(graphiques, couleur, cx, cy, rayon, dents=7):
+    """Roue dentee, tracee plutot que tiree d'une police.
+
+    Meme raison que l'etoile et le cadenas : GDI+ ne rend pas les polices
+    d'icones de Windows. Mesure faite en dessinant U+2699 hors ecran, le
+    resultat ne se distinguait pas du rectangle de repli d'un glyphe absent.
+
+    Le trou du centre est une seconde figure du meme trace : en remplissage
+    alterne, ce qui tombe a l'interieur d'un nombre pair de contours reste
+    vide. Une rondelle percee plutot qu'un disque avec un rond par-dessus,
+    qui obligerait a connaitre la couleur du fond.
+    """
+    creux = rayon * 0.74
+    periode = 2 * math.pi / dents
+    # Une dent occupe un peu moins d'un tiers du pas : au-dela elles se
+    # touchent et la roue redevient un disque.
+    sommet = periode * 0.30
+    fond = periode * 0.34
+    flanc = (periode - sommet - fond) / 2.0
+
+    p = GraphicsPath()
+    points = []
+    for i in range(dents):
+        a = -math.pi / 2 + i * periode
+        for angle, r in ((a, rayon),
+                         (a + sommet, rayon),
+                         (a + sommet + flanc, creux),
+                         (a + sommet + flanc + fond, creux)):
+            points.append((float(cx + r * math.cos(angle)),
+                           float(cy + r * math.sin(angle))))
+    for i in range(len(points)):
+        x1, y1 = points[i]
+        x2, y2 = points[(i + 1) % len(points)]
+        p.AddLine(x1, y1, x2, y2)
+    p.CloseFigure()
+
+    trou = rayon * 0.36
+    p.AddEllipse(float(cx - trou), float(cy - trou),
+                 float(trou * 2), float(trou * 2))
+
+    pinceau = SolidBrush(couleur)
+    graphiques.FillPath(pinceau, p)
+    pinceau.Dispose()
+    p.Dispose()
+
+
 def ecran_lecteur(graphiques, couleur, x, y, largeur, hauteur, plein=True):
     """Petit ecran avec un triangle de lecture, trace et non tire d'une police."""
     chemin = chemin_arrondi(x, y, largeur, hauteur, 3)

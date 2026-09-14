@@ -17,26 +17,26 @@ de compter sur leur position.
 TEXTES = {
     "fr": {
         # --- bandeaux
-        "telecharge": "Telecharge : %s  (dans %s)",
-        "telechargement_interrompu": "Telechargement interrompu : %s",
-        "aucun_favori": "Aucun favori pour l'instant : cliquez l'etoile "
+        "telecharge": "Téléchargé : %s  (dans %s)",
+        "telechargement_interrompu": "Téléchargement interrompu : %s",
+        "aucun_favori": "Aucun favori pour l'instant : cliquez l'étoile "
                         "de la barre d'adresse pour en ajouter un.",
-        "retire_de": "Retire de « %s ».",
-        "groupe_plein": "« %s » contient deja %d onglets : c'est le maximum, "
+        "retire_de": "Retiré de « %s ».",
+        "groupe_plein": "« %s » contient déjà %d onglets : c'est le maximum, "
                         "pour que les rouvrir reste tenable.",
-        "ajoute_a": "Ajoute a « %s ».",
-        "groupe_existe": "Un groupe « %s » existe deja.",
-        "groupe_supprime": "Groupe « %s » supprime. Les onglets ouverts "
+        "ajoute_a": "Ajouté à « %s ».",
+        "groupe_existe": "Un groupe « %s » existe déjà.",
+        "groupe_supprime": "Groupe « %s » supprimé. Les onglets ouverts "
                            "restent ouverts.",
         "groupe_vide": "Le groupe « %s » ne contient encore aucune page : "
                        "faites un clic droit sur un onglet pour l'y ranger.",
         "groupe_ouvert": "« %s » : %d onglet%s ouvert%s.",
         "zoom": "Zoom %d %% sur %s",
-        "trop_fenetres": "Plume n'ouvre pas plus de %d fenetres : chaque "
-                         "fenetre coute de la memoire.",
+        "trop_fenetres": "Plume n'ouvre pas plus de %d fenêtres : chaque "
+                         "fenêtre coûte de la mémoire.",
         # --- menu du clic droit sur un onglet
         "menu_retirer_de": "Retirer de « %s »",
-        "menu_ajouter_a": "Ajouter a « %s »",
+        "menu_ajouter_a": "Ajouter à « %s »",
         "menu_nouveau_groupe": "Nouveau groupe de travail...",
         "menu_fermer": "Fermer l'onglet",
         "menu_fermer_autres": "Fermer les autres onglets",
@@ -47,17 +47,17 @@ TEXTES = {
         "accueil_changer_teinte": "Changer les couleurs du groupe",
         "accueil_teinte": "Choisir cette couleur",
         "accueil_valider_teintes": "Valider",
-        "accueil_pubs": "%d requete%s publicitaire%s refusee%s depuis le "
+        "accueil_pubs": "%d requête%s publicitaire%s refusée%s depuis le "
                         "lancement",
-        "accueil_defaut": "Faire de Plume le navigateur par defaut",
-        "accueil_defaut_aide": "Windows ne laisse aucun programme se designer "
-                               "lui-meme : le bouton ouvre la page des "
-                               "Parametres ou vous pouvez le choisir.",
+        "accueil_defaut": "Faire de Plume le navigateur par défaut",
+        "accueil_defaut_aide": "Windows ne laisse aucun programme se désigner "
+                               "lui-même : le bouton ouvre la page des "
+                               "Paramètres où vous pouvez le choisir.",
         "accueil_langue": "Langue",
-        "tache_fenetre": "Nouvelle fenetre",
-        "tache_privee": "Nouvelle fenetre privee",
+        "tache_fenetre": "Nouvelle fenêtre",
+        "tache_privee": "Nouvelle fenêtre privée",
         "tache_onglet": "Nouvel onglet",
-        "accueil_defaut_fait": "Plume est votre navigateur par defaut",
+        "accueil_defaut_fait": "Plume est votre navigateur par défaut",
         "accueil_vie_privee": "Plume n'a pas de serveur : rien ne remonte "
                               "vers son auteur, il n'y a pas de compte ni de "
                               "synchronisation. Vos favoris, vos cookies et "
@@ -69,22 +69,44 @@ TEXTES = {
         "lecteur_piste": "piste ",
         "lecteur_aucune_piste": "Aucune piste disponible",
         "lecteur_passage": "Passage en ",
+        # --- infobulles de la barre d'adresse
+        "bulle_reculer": "Reculer",
+        "bulle_avancer": "Avancer",
+        "bulle_recharger": "Recharger (F5)",
+        "bulle_accueil": "Page d'accueil",
+        "bulle_favori_ajouter": "Ajouter aux favoris",
+        "bulle_favori_retirer": "Retirer des favoris",
+        "bulle_lecteur_site": "Lire avec le lecteur du site",
+        "bulle_lecteur_plume": "Lire avec le lecteur de Plume",
+        "bulle_reglages": "Paramètres",
+        # --- panneau des parametres
+        "reglages_titre": "Paramètres",
+        "reglages_moteur": "Moteur de recherche",
+        "reglages_qualite": "Qualité maximale",
+        "reglages_fps": "Images par seconde",
+        "reglages_intro": "Animation d'ouverture",
+        "reglages_glissement": "Glissement des onglets",
+        "reglages_miniatures": "Miniatures des résultats",
+        "reglages_veille": "Veille des onglets",
+        "reglages_jamais": "Jamais",
+        "reglages_secondes": "%d s",
+        "reglages_minutes": "%d min",
         # --- mises a jour
         "maj_disponible": "Plume %s est disponible.",
-        "maj_bouton": "Mettre a jour",
-        "maj_telechargement": "Telechargement de la mise a jour... %d %%",
-        "maj_bientot": "Mise a jour dans %d secondes.",
+        "maj_bouton": "Mettre à jour",
+        "maj_telechargement": "Téléchargement de la mise à jour... %d %%",
+        "maj_bientot": "Mise à jour dans %d secondes.",
         "maj_annuler": "Annuler",
-        "maj_annulee": "Mise a jour annulee.",
+        "maj_annulee": "Mise à jour annulée.",
         "maj_lancement": "Installation en cours, Plume va se rouvrir.",
-        "maj_echec_reseau": "La mise a jour n'a pas pu etre telechargee. "
-                            "Elle n'est peut-etre pas encore en ligne : "
-                            "reessayez plus tard.",
-        "maj_echec_empreinte": "Le fichier recu ne correspond pas a celui qui "
-                               "a ete publie. Rien n'a ete installe, et il a "
-                               "ete efface.",
-        "maj_echec_manifeste": "L'annonce de mise a jour est illisible. Rien "
-                               "n'a ete installe.",
+        "maj_echec_reseau": "La mise à jour n'a pas pu être téléchargée. "
+                            "Elle n'est peut-être pas encore en ligne : "
+                            "réessayez plus tard.",
+        "maj_echec_empreinte": "Le fichier reçu ne correspond pas à celui qui "
+                               "a été publié. Rien n'a été installé, et il a "
+                               "été effacé.",
+        "maj_echec_manifeste": "L'annonce de mise à jour est illisible. Rien "
+                               "n'a été installé.",
     },
     "en": {
         "telecharge": "Downloaded: %s  (in %s)",
@@ -133,6 +155,26 @@ TEXTES = {
         "lecteur_piste": "track ",
         "lecteur_aucune_piste": "No track available",
         "lecteur_passage": "Switching to ",
+        "bulle_reculer": "Back",
+        "bulle_avancer": "Forward",
+        "bulle_recharger": "Reload (F5)",
+        "bulle_accueil": "Home page",
+        "bulle_favori_ajouter": "Add to bookmarks",
+        "bulle_favori_retirer": "Remove from bookmarks",
+        "bulle_lecteur_site": "Play with the site's player",
+        "bulle_lecteur_plume": "Play with Plume's player",
+        "bulle_reglages": "Settings",
+        "reglages_titre": "Settings",
+        "reglages_moteur": "Search engine",
+        "reglages_qualite": "Maximum quality",
+        "reglages_fps": "Frames per second",
+        "reglages_intro": "Opening animation",
+        "reglages_glissement": "Tab sliding",
+        "reglages_miniatures": "Result thumbnails",
+        "reglages_veille": "Tab sleep",
+        "reglages_jamais": "Never",
+        "reglages_secondes": "%d s",
+        "reglages_minutes": "%d min",
         "maj_disponible": "Plume %s is available.",
         "maj_bouton": "Update",
         "maj_telechargement": "Downloading the update... %d %%",

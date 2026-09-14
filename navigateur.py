@@ -258,6 +258,7 @@ DWMWA_MODE_SOMBRE_ANCIEN = 19
 WS_EX_TRANSPARENT = 0x00000020
 WS_EX_TOOLWINDOW = 0x00000080
 WS_EX_NOACTIVATE = 0x08000000
+WS_EX_LAYERED = 0x00080000
 if ctypes.sizeof(ctypes.c_void_p) == 8:
     _lire_style = user32.GetWindowLongPtrW
     _ecrire_style = user32.SetWindowLongPtrW
@@ -493,6 +494,23 @@ DUREE_CHUTE_PAGE = 0.26   # au-dela, la liste cesse d'aider et encombre
 H_SUGGESTION = 34
 H_MENU = 30                  # hauteur d'une ligne de menu
 H_SEPARATEUR = 9
+H_REGLAGE = 38               # hauteur d'une ligne du panneau des parametres
+H_TITRE_REGLAGES = 34
+L_REGLAGES = 330
+
+# Les valeurs proposees pour les reglages a choix. Le libelle ne passe pas par
+# la traduction quand c'est un nom propre ou un nombre : « 1080p », « 60 fps »
+# et « Qwant » se lisent pareil dans les deux langues.
+MOTEURS = (
+    ("https://www.google.com/search?q={q}", "Google"),
+    ("https://duckduckgo.com/?q={q}", "DuckDuckGo"),
+    ("https://www.qwant.com/?q={q}", "Qwant"),
+    ("https://www.ecosia.org/search?q={q}", "Ecosia"),
+    ("https://www.bing.com/search?q={q}", "Bing"),
+)
+QUALITES = ((720, "720p"), (1080, "1080p"), (1440, "1440p"), (2160, "2160p"))
+IMAGES = ((30, "30 fps"), (60, "60 fps"), (120, "120 fps"))
+VEILLES = (0, 30, 90, 300, 600, 1800)   # secondes, 0 pour jamais
 FENETRES = []         # fenetres Plume ouvertes, dans l'ordre de creation
 DERNIERE = [None]     # derniere fenetre activee, cible des ouvertures
 MARGE_CROIX = 26      # place reservee a droite pour la croix
@@ -1451,7 +1469,13 @@ class Navigateur(Form):
         self._glisse_page = None  # glissement de page en cours, s'il y en a
         self._chute = None        # page d'un onglet ferme, en train de tomber
         self.travail = core.charger_groupes_travail()
+        self._attente_cadre = None   # minuteur du repeint de fin de fondu
         self._menu = None         # fenetre du menu contextuel
+        self._reglages = None     # fenetre du panneau des parametres
+        self._items_reglages = []
+        self._survol_reglage = -1
+        self._rect_roue = Rectangle(0, 0, 0, 0)
+        self._survol_roue = False
         self._anim_fenetre = None   # minuteur d'apparition et d'effacement
         self._ferme_pour_de_bon = False
         self._items_menu = []
@@ -1607,7 +1631,10 @@ class Navigateur(Form):
             self.champ.SelectAll()
 
     def rect_champ(self):
-        return Rectangle(168, 9, max(160, self.barre_nav.Width - 184), H_NAV - 18)
+        # 40 px de plus reserves a droite : la roue des parametres se pose
+        # apres le champ, pas dedans.
+        return Rectangle(168, 9, max(160, self.barre_nav.Width - 224),
+                         H_NAV - 18)
 
     # ------------------------------------------------------------------
     # Dessin
@@ -1634,6 +1661,12 @@ class Navigateur(Form):
                        Rectangle(x, 10, 30, 28))
 
         r = self.rect_champ()
+        self._rect_roue = Rectangle(r.Right + 10, 10, 30, 28)
+        if self._survol_roue:
+            ui.remplir_arrondi(g, ui.ONGLET_SURVOL, self._rect_roue.X, 10,
+                               30, 28, 8)
+        ui.roue_dentee(g, ui.TEXTE if self._survol_roue else ui.TEXTE2,
+                       self._rect_roue.X + 15, 24, 8)
         if self.champ.Focused:
             ui.remplir_arrondi(g, ui.ACCENT, r.X - 2, r.Y - 2,
                                r.Width + 4, r.Height + 4, 0, "pilule")
@@ -1836,8 +1869,7 @@ class Navigateur(Form):
         self.favoris["barre_visible"] = not self.favoris["barre_visible"]
         self.enregistrer_favoris()
         if not self.favoris["elements"]:
-            self.signaler("Aucun favori pour l'instant : cliquez l'etoile "
-                          "dans la barre d'adresse pour en ajouter un.")
+            self.signaler(core.t("aucun_favori"))
 
     def enregistrer_favoris(self):
         core.enregistrer_favoris(self.favoris)
@@ -2578,6 +2610,7 @@ class Navigateur(Form):
 
     def clic_onglets(self, envoyeur, args):
         self.fermer_menu()
+        self.fermer_reglages()
         if args.Button == MouseButtons.Right:
             for onglet in list(self.onglets):
                 if onglet.rect.Contains(args.Location):
@@ -2731,28 +2764,34 @@ class Navigateur(Form):
                 break
         etoile = self._rect_etoile.Contains(args.Location)
         lecteur = self._rect_lecteur.Contains(args.Location)
+        roue = self._rect_roue.Contains(args.Location)
         if (nom != self._survol_bouton or etoile != self._survol_etoile
-                or lecteur != self._survol_lecteur):
+                or lecteur != self._survol_lecteur
+                or roue != self._survol_roue):
             self._survol_bouton = nom
             self._survol_etoile = etoile
             self._survol_lecteur = lecteur
+            self._survol_roue = roue
             self.maj_infobulle()
             self.barre_nav.Invalidate()
 
     def maj_infobulle(self):
         """Texte de l'infobulle, selon ce que survole la souris."""
-        if self._survol_lecteur:
-            texte = ("Lire avec le lecteur du site"
-                     if not (self.actif and self.actif.lecteur_site)
-                     else "Lire avec le lecteur de Plume")
+        if self._survol_roue:
+            texte = core.t("bulle_reglages")
+        elif self._survol_lecteur:
+            texte = core.t("bulle_lecteur_site"
+                           if not (self.actif and self.actif.lecteur_site)
+                           else "bulle_lecteur_plume")
         elif self._survol_etoile:
-            texte = ("Retirer des favoris"
-                     if self.favori_courant() is not None
-                     else "Ajouter aux favoris")
+            texte = core.t("bulle_favori_retirer"
+                           if self.favori_courant() is not None
+                           else "bulle_favori_ajouter")
         else:
-            texte = {"prec": "Reculer", "suiv": "Avancer",
-                     "rech": "Recharger (F5)",
-                     "accueil": "Page d'accueil"}.get(self._survol_bouton, "")
+            texte = {"prec": "bulle_reculer", "suiv": "bulle_avancer",
+                     "rech": "bulle_recharger",
+                     "accueil": "bulle_accueil"}.get(self._survol_bouton)
+            texte = core.t(texte) if texte else ""
         if texte != self._infobulle_posee:
             self._infobulle_posee = texte
             try:
@@ -2795,6 +2834,10 @@ class Navigateur(Form):
                  "rech": self.recharger,
                  "accueil": self.aller_accueil}[cle]()
                 return
+        if self._rect_roue.Contains(args.Location):
+            self.basculer_reglages()
+            return
+        self.fermer_reglages()
         if self._rect_lecteur.Contains(args.Location):
             self.basculer_lecteur()
             return
@@ -3234,10 +3277,10 @@ class Navigateur(Form):
                     pass
                 # Revenir a l'opacite pleine retire WS_EX_LAYERED, et Windows
                 # laisse alors la premiere ligne de pixels a la teinte claire
-                # du cadre par defaut. Un repeint remet notre couleur.
+                # du cadre par defaut. Le repeint attend que ce soit fait.
                 if cible >= 1.0:
                     try:
-                        rafraichir_cadre(self.Handle.ToInt64())
+                        self.attendre_le_cadre()
                     except Exception:
                         pass
                 if apres is not None:
@@ -3532,6 +3575,284 @@ class Navigateur(Form):
         except Exception as e:
             journal("menu : %s" % e)
             return None
+
+    # ------------------------------------------------------------------
+    # Parametres : la roue de la barre, et ce qui en tombe
+    # ------------------------------------------------------------------
+    def basculer_reglages(self):
+        """Ouvre le panneau, ou le referme s'il est deja la."""
+        if self._reglages is not None and self._reglages.Visible:
+            return self.fermer_reglages()
+        self.ouvrir_reglages()
+
+    def _items_de_reglages(self):
+        """Les lignes du panneau, dans l'ordre ou elles s'affichent.
+
+        Relu a chaque ouverture : un reglage change ailleurs, ou Plume devenue
+        navigateur par defaut entre-temps, doit se voir sans redemarrer.
+        """
+        cfg = core.CONFIG
+        items = [{"genre": "langue", "texte": core.t("accueil_langue")},
+                 {"genre": "choix", "cle": "moteur_recherche",
+                  "texte": core.t("reglages_moteur"), "valeurs": MOTEURS},
+                 {"genre": "choix", "cle": "qualite_max",
+                  "texte": core.t("reglages_qualite"), "valeurs": QUALITES},
+                 {"genre": "choix", "cle": "fps_max",
+                  "texte": core.t("reglages_fps"), "valeurs": IMAGES},
+                 {"genre": "choix", "cle": "veille_onglets",
+                  "texte": core.t("reglages_veille"),
+                  "valeurs": tuple((v, self._dire_veille(v))
+                                   for v in self._veilles_offertes())},
+                 {"genre": "separateur"},
+                 {"genre": "bascule", "cle": "intro",
+                  "texte": core.t("reglages_intro"),
+                  "valeur": bool(cfg.get("intro", True))},
+                 {"genre": "bascule", "cle": "glissement_onglets",
+                  "texte": core.t("reglages_glissement"),
+                  "valeur": bool(cfg.get("glissement_onglets", True))},
+                 {"genre": "bascule", "cle": "miniatures",
+                  "texte": core.t("reglages_miniatures"),
+                  "valeur": bool(cfg.get("miniatures", True))}]
+        # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
+        # disparait, au lieu de rester a repeter un etat.
+        if not core.est_navigateur_par_defaut():
+            items.append({"genre": "separateur"})
+            items.append({"genre": "defaut",
+                          "texte": core.t("accueil_defaut")})
+        return items
+
+    def _veilles_offertes(self):
+        """Les delais proposes, plus celui qui est regle s'il n'y est pas.
+
+        Quelqu'un qui a mis sa propre valeur dans config.json doit la voir
+        affichee, pas se la faire remplacer par la plus proche.
+        """
+        actuel = int(core.CONFIG.get("veille_onglets") or 0)
+        return tuple(sorted(set(VEILLES) | {actuel}))
+
+    def _dire_veille(self, secondes):
+        secondes = int(secondes)
+        if secondes <= 0:
+            return core.t("reglages_jamais")
+        if secondes % 60 == 0:
+            return core.t("reglages_minutes", secondes // 60)
+        return core.t("reglages_secondes", secondes)
+
+    def ouvrir_reglages(self):
+        self.fermer_menu()
+        self._items_reglages = self._items_de_reglages()
+        self._survol_reglage = -1
+        if self._reglages is None:
+            self._reglages = self._creer_panneau_reglages()
+            if self._reglages is None:
+                return
+        hauteur = H_TITRE_REGLAGES + 8 + sum(
+            H_SEPARATEUR if i.get("genre") == "separateur" else H_REGLAGE
+            for i in self._items_reglages)
+        try:
+            coin = self.barre_nav.PointToScreen(
+                Point(self._rect_roue.Right, self._rect_roue.Bottom + 4))
+        except Exception:
+            return
+        zone = Screen.FromHandle(self.Handle).WorkingArea
+        x = min(max(zone.Left + 4, coin.X - L_REGLAGES), zone.Right - L_REGLAGES - 4)
+        y = min(coin.Y, zone.Bottom - hauteur - 4)
+        self._reglages.Size = Size(L_REGLAGES, hauteur)
+        user32.SetWindowPos(
+            ctypes.c_void_p(self._reglages.Handle.ToInt64()),
+            ctypes.c_void_p(HWND_TOPMOST), x, y, L_REGLAGES, hauteur,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        self._reglages.Invalidate()
+
+    def _creer_panneau_reglages(self):
+        try:
+            panneau = Form()
+            panneau.FormBorderStyle = getattr(FormBorderStyle, "None")
+            panneau.StartPosition = FormStartPosition.Manual
+            panneau.ShowInTaskbar = False
+            panneau.BackColor = ui.FOND_NAV
+            panneau.Paint += self._peindre_reglages
+            panneau.MouseMove += self._souris_reglages
+            panneau.MouseClick += self._clic_reglages
+            panneau.MouseLeave += self._sortie_reglages
+            ui.double_tampon(panneau)
+            poignee = panneau.Handle.ToInt64()
+            style = _lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE)
+            _ecrire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE,
+                          int(style) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            return panneau
+        except Exception as e:
+            journal("parametres : %s" % e)
+            return None
+
+    def fermer_reglages(self):
+        self._survol_reglage = -1
+        if self._reglages is None:
+            return
+        try:
+            user32.ShowWindow(
+                ctypes.c_void_p(self._reglages.Handle.ToInt64()), 0)
+        except Exception:
+            pass
+        self.barre_nav.Invalidate()
+
+    def _lignes_reglages(self):
+        """Position verticale de chaque ligne, titre exclu."""
+        y = H_TITRE_REGLAGES
+        for i, item in enumerate(self._items_reglages):
+            h = H_SEPARATEUR if item.get("genre") == "separateur" else H_REGLAGE
+            yield i, item, y, h
+            y += h
+
+    def _rect_bascule(self, y, h):
+        return Rectangle(L_REGLAGES - 58, y + (h - 20) // 2, 40, 20)
+
+    def _rects_langue(self, y, h):
+        """Les deux pastilles FR et EN, de gauche a droite."""
+        return (Rectangle(L_REGLAGES - 84, y + (h - 22) // 2, 36, 22),
+                Rectangle(L_REGLAGES - 44, y + (h - 22) // 2, 36, 22))
+
+    def _peindre_reglages(self, envoyeur, args):
+        g = args.Graphics
+        ui.preparer(g)
+        largeur, hauteur = envoyeur.Width, envoyeur.Height
+        ui.remplir_arrondi(g, ui.FOND_NAV, 0, 0, largeur, hauteur, 10)
+        ui.contour_arrondi(g, ui.CHAMP_BORD, 0, 0, largeur - 1, hauteur - 1,
+                           10, 1)
+        ui.roue_dentee(g, ui.ACCENT_PALE, 22, H_TITRE_REGLAGES / 2.0, 7)
+        ui.texte_tronque(g, core.t("reglages_titre"), self.police, ui.TEXTE,
+                         36, (H_TITRE_REGLAGES - 16) // 2, largeur - 48, 16)
+
+        langue = core.langue()
+        for i, item, y, h in self._lignes_reglages():
+            genre = item.get("genre")
+            if genre == "separateur":
+                ui.remplir_arrondi(g, ui.CHAMP_BORD, 14, y + h // 2,
+                                   largeur - 28, 1, 0)
+                continue
+            survole = (i == self._survol_reglage)
+            if survole:
+                ui.remplir_arrondi(g, ui.ONGLET_SURVOL, 4, y, largeur - 8,
+                                   h, 7)
+            if genre == "defaut":
+                ui.remplir_arrondi(g, ui.ACCENT if survole else ui.CHAMP_FOND,
+                                   14, y + 5, largeur - 28, h - 10, 9)
+                ui.centrer(g, item["texte"], self.police,
+                           ui.TEXTE if survole else ui.TEXTE2,
+                           Rectangle(14, y + 5, largeur - 28, h - 10))
+                continue
+
+            ui.texte_tronque(g, item["texte"], self.police, ui.TEXTE2,
+                             16, y + (h - 16) // 2, largeur - 110, 16)
+            if genre == "bascule":
+                r = self._rect_bascule(y, h)
+                allume = bool(item.get("valeur"))
+                ui.remplir_arrondi(g, ui.ACCENT if allume else ui.CHAMP_BORD,
+                                   r.X, r.Y, r.Width, r.Height,
+                                   r.Height // 2)
+                cx = (r.Right - 17) if allume else (r.X + 3)
+                ui.remplir_arrondi(g, ui.TEXTE, cx, r.Y + 3, 14, 14, 7)
+            elif genre == "langue":
+                gauche, droite = self._rects_langue(y, h)
+                for rect, code in ((gauche, "fr"), (droite, "en")):
+                    choisi = (langue == code)
+                    ui.remplir_arrondi(g, ui.ACCENT if choisi
+                                       else ui.CHAMP_FOND,
+                                       rect.X, rect.Y, rect.Width,
+                                       rect.Height, 8)
+                    ui.centrer(g, code.upper(), self.police_petite,
+                               ui.TEXTE if choisi else ui.TEXTE3, rect)
+            elif genre == "choix":
+                ui.centrer(g, self._libelle_choix(item), self.police,
+                           ui.TEXTE,
+                           Rectangle(largeur - 152, y, 124, h))
+                # Le chevron dit que la ligne s'ouvre, sans quoi une valeur
+                # affichee a droite se lit comme un simple etat.
+                ui.trait(g, ui.TEXTE3, largeur - 24, y + h / 2.0 - 2,
+                         largeur - 20, y + h / 2.0 + 2, 1.4)
+                ui.trait(g, ui.TEXTE3, largeur - 20, y + h / 2.0 + 2,
+                         largeur - 16, y + h / 2.0 - 2, 1.4)
+
+    def _libelle_choix(self, item):
+        """Le nom de la valeur reglee, ou la valeur brute si elle est inconnue."""
+        actuelle = core.CONFIG.get(item["cle"])
+        for valeur, nom in item["valeurs"]:
+            if valeur == actuelle:
+                return nom
+        return str(actuelle)
+
+    def _ligne_reglage_sous(self, py):
+        for i, item, y, h in self._lignes_reglages():
+            if y <= py < y + h and item.get("genre") != "separateur":
+                return i
+        return -1
+
+    def _souris_reglages(self, envoyeur, args):
+        i = self._ligne_reglage_sous(args.Y)
+        if i != self._survol_reglage:
+            self._survol_reglage = i
+            envoyeur.Invalidate()
+
+    def _sortie_reglages(self, envoyeur, args):
+        if self._survol_reglage != -1:
+            self._survol_reglage = -1
+            envoyeur.Invalidate()
+
+    def _clic_reglages(self, envoyeur, args):
+        i = self._ligne_reglage_sous(args.Y)
+        if i < 0 or i >= len(self._items_reglages):
+            return
+        item = self._items_reglages[i]
+        genre = item.get("genre")
+        y = hauteur_ligne = 0
+        for j, _autre, haut, h in self._lignes_reglages():
+            if j == i:
+                y, hauteur_ligne = haut, h
+                break
+
+        if genre == "bascule":
+            core.definir_reglage(item["cle"], not bool(item.get("valeur")))
+            self._items_reglages = self._items_de_reglages()
+            envoyeur.Invalidate()
+        elif genre == "langue":
+            gauche, droite = self._rects_langue(y, hauteur_ligne)
+            code = None
+            if gauche.Contains(args.Location):
+                code = "fr"
+            elif droite.Contains(args.Location):
+                code = "en"
+            if code and core.definir_langue(code):
+                self.appliquer_langue()
+                self._items_reglages = self._items_de_reglages()
+                envoyeur.Invalidate()
+        elif genre == "choix":
+            self._menu_de_choix(item, y + hauteur_ligne)
+        elif genre == "defaut":
+            self.fermer_reglages()
+            core.ouvrir_reglages_defaut()
+
+    def _menu_de_choix(self, item, bas_de_ligne):
+        """Deroule les valeurs possibles, avec le menu deja en place.
+
+        Reutiliser le menu du clic droit evite d'ecrire une liste deroulante
+        de plus, avec son survol, son clavier et ses bords d'ecran.
+        """
+        actuelle = core.CONFIG.get(item["cle"])
+        items = [{"texte": nom, "coche": (valeur == actuelle),
+                  "action": (lambda c=item["cle"], v=valeur:
+                             self._poser_choix(c, v))}
+                 for valeur, nom in item["valeurs"]]
+        try:
+            coin = self._reglages.PointToScreen(Point(20, bas_de_ligne))
+        except Exception:
+            return
+        self.ouvrir_menu(items, coin.X, coin.Y)
+
+    def _poser_choix(self, cle, valeur):
+        core.definir_reglage(cle, valeur)
+        self._items_reglages = self._items_de_reglages()
+        if self._reglages is not None:
+            self._reglages.Invalidate()
 
     def fermer_menu(self):
         self._items_menu = []
@@ -4885,13 +5206,63 @@ class Navigateur(Form):
         return None
 
     def au_deplacement(self, envoyeur, args):
+        """La fenetre a bouge : le lecteur suit sans attendre.
+
+        Le panneau des parametres, lui, ne suit pas : c'est une fenetre de
+        premier niveau, elle resterait seule au milieu de l'ecran. On le
+        referme, comme le menu.
+        """
         self.cacher_suggestions()
-        """La fenetre a bouge : le lecteur suit sans attendre."""
+        self.fermer_reglages()
         self.replacer()
 
     def au_redimensionnement(self, envoyeur, args):
-        """Taille changee : seul le lecteur est a replacer."""
+        """Taille changee : le lecteur se replace, le panneau se referme."""
+        self.fermer_reglages()
         self.replacer()
+
+    def attendre_le_cadre(self):
+        """Repeint le contour une fois WS_EX_LAYERED reellement retire.
+
+        Poser `Opacity = 1.0` DEMANDE le retrait, Windows ne l'applique pas
+        dans la foulee : repeindre tout de suite repeint l'ancien etat, et la
+        ligne perimee revient juste apres. Mesure faite, une fois sur trois,
+        et `StyleChanged` n'y suffisait pas non plus : il dit que WinForms a
+        demande le changement, pas que Windows l'a fait.
+
+        On regarde donc le style lui-meme, et on repeint un battement apres
+        l'avoir vu partir. Faute de quoi l'attente s'arrete au bout d'une
+        seconde : mieux vaut un trait clair qu'un minuteur qui tourne.
+        """
+        poignee = self.Handle.ToInt64()
+        minuteur = Timer()
+        minuteur.Interval = 40
+        fin = [time.time() + 1.0, False]
+
+        def battre(envoyeur=None, args=None):
+            try:
+                superpose = bool(
+                    int(_lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE))
+                    & WS_EX_LAYERED)
+            except Exception:
+                superpose = False
+            # Vu partir : on laisse passer un battement, le temps que le
+            # compositeur ait pose sa derniere image, puis on repeint.
+            if not superpose and not fin[1]:
+                fin[1] = True
+                return
+            if fin[1] or time.time() > fin[0]:
+                try:
+                    minuteur.Stop()
+                    minuteur.Dispose()
+                except Exception:
+                    pass
+                self._attente_cadre = None
+                rafraichir_cadre(poignee)
+
+        minuteur.Tick += battre
+        self._attente_cadre = minuteur   # une reference vivante, sinon ramasse
+        minuteur.Start()
 
     def au_demarrage(self, envoyeur, args):
         # Une taille de repli, sinon « restaurer » n'a nulle part ou revenir et
@@ -4985,6 +5356,7 @@ class Navigateur(Form):
     def a_ete_activee(self, envoyeur, args):
         DERNIERE[0] = self
         self.fermer_menu()
+        self.fermer_reglages()
         self.verifier_defaut()
 
     def verifier_defaut(self):
@@ -5043,6 +5415,7 @@ class Navigateur(Form):
             except Exception:
                 return
             self.fermer_menu()
+            self.fermer_reglages()
             self.cacher_suggestions()
             for onglet in self.onglets:
                 onglet.incrustation.cacher()
