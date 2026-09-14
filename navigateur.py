@@ -232,6 +232,9 @@ HTCAPTION = 2
 # le deplacement en charge, avec l'ancrage aux bords, le secouement et le
 # retour a la taille normale quand on tire une fenetre agrandie vers le bas.
 WM_NCLBUTTONDOWN = 0x00A1
+# Les deux messages par lesquels Windows redessine le cadre d'une fenetre.
+WM_NCPAINT = 0x0085
+WM_NCACTIVATE = 0x0086
 user32.ReleaseCapture.argtypes = []
 user32.ReleaseCapture.restype = ctypes.c_int
 user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint,
@@ -612,6 +615,10 @@ RDW_ERASE = 0x0004
 RDW_ALLCHILDREN = 0x0080
 RDW_UPDATENOW = 0x0100
 RDW_FRAME = 0x0400
+# Epaisseur du cadre que Windows pose sur le haut de la zone client. Mesure :
+# quatre lignes, 227,227,227 puis 255,255,255 puis deux fois 180,180,180. On
+# repeint un peu plus large, la marge ne coute rien.
+HAUTEUR_CADRE_SYSTEME = 8
 
 
 def rafraichir_cadre(poignee):
@@ -627,10 +634,22 @@ def rafraichir_cadre(poignee):
     essayant les drapeaux un a un sur la fenetre ouverte. C'est l'effacement
     du fond qui repeint la marge, l'invalidation seule n'y suffit pas.
     """
+    commun = RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_UPDATENOW
     try:
-        return bool(user32.RedrawWindow(
-            ctypes.c_void_p(poignee), None, None,
-            RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_UPDATENOW))
+        # D'abord la marge du formulaire : toute la fenetre, sans les enfants,
+        # donc seule la bordure d'un pixel est repeinte.
+        ok = bool(user32.RedrawWindow(ctypes.c_void_p(poignee), None, None,
+                                      commun))
+        # Puis le haut, enfants compris. Le cadre de Windows deborde sur
+        # quatre pixels, mesure faite : 227, 255, 180, 180 du haut vers le
+        # bas. Les trois derniers tombent dans la barre d'onglets, que le
+        # premier appel ne touche pas. On se limite a cette bande : invalider
+        # toute la fenetre avec ses enfants ferait clignoter la page.
+        haut = RECT_WIN(0, 0, 32000, HAUTEUR_CADRE_SYSTEME)
+        ok = bool(user32.RedrawWindow(ctypes.c_void_p(poignee),
+                                      ctypes.byref(haut), None,
+                                      commun | RDW_ALLCHILDREN)) and ok
+        return ok
     except Exception:
         return False
 
@@ -1019,6 +1038,14 @@ class Onglet(object):
         # interface sombre, chaque onglet neuf lancait un eclair blanc en plein
         # ecran. La couleur de fond par defaut supprime l'eclair sans rien
         # changer aux pages, qui posent la leur par dessus.
+        #
+        # Deux fonds, pas un. `DefaultBackgroundColor` est celui du navigateur,
+        # sous la page. `BackColor` est celui du controle WinForms qui le
+        # porte, et c'est Windows qui le peint quand la vue bouge ou change de
+        # taille, avant que le navigateur n'ait compose quoi que ce soit. Il
+        # valait 240,240,240, mesure faite : d'ou les traits clairs au
+        # glissement d'un onglet a l'autre, sur le bord de la vue qui avance.
+        self.vue.BackColor = ui.FOND_PAGE
         try:
             self.vue.DefaultBackgroundColor = ui.FOND_PAGE
         except Exception as e:
@@ -5092,6 +5119,16 @@ class Navigateur(Form):
             if msg == WM_GETMINMAXINFO:
                 if self._bornes_agrandissement(lparam):
                     return 0
+            if msg == WM_NCPAINT:
+                # Rien a dessiner : notre zone client couvre toute la fenetre,
+                # et ce que Windows dessinerait la se poserait dessus.
+                return 0
+            if msg == WM_NCACTIVATE:
+                # On laisse le defaut changer l'etat actif, mais pas repeindre
+                # le cadre : c'est ce que veut dire lparam a -1. Sans cela, la
+                # bande claire revenait a chaque changement d'activation, donc
+                # a chaque fois qu'une video reparaissait.
+                return self._chainer(hwnd, msg, wparam, -1)
             if msg == WM_NCHITTEST:
                 defaut = self._chainer(hwnd, msg, wparam, lparam)
                 if defaut == HTCLIENT:
