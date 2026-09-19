@@ -1010,6 +1010,9 @@ class Onglet(object):
         # en etait au lieu de tout recharger.
         self.incrustation = Incrustation(au_probleme=navigateur.signaler,
                                          au_action=self.au_action_lecteur)
+        # Les deux rappels sont poses ici ET a l'adoption de l'onglet par une
+        # fenetre : un onglet tire vers une autre fenetre change de destinataire.
+        self.incrustation.au_renoncement = navigateur.proposer_lecteur_site
         self.zone_page = None        # zone du lecteur, en coordonnees de page
         # Taille de la zone de page au moment de cette mesure. Une vue cachee
         # ne refait pas sa mise en page : au retour, la zone peut dater d'une
@@ -2515,6 +2518,7 @@ class Navigateur(Form):
             pass
         try:
             onglet.incrustation.au_probleme = self.signaler
+            onglet.incrustation.au_renoncement = self.proposer_lecteur_site
         except Exception:
             pass
         self.onglets.append(onglet)
@@ -2825,6 +2829,30 @@ class Navigateur(Form):
                 self.infobulle.SetToolTip(self.barre_nav, texte)
             except Exception:
                 pass
+
+    def proposer_lecteur_site(self, texte):
+        """Offre de passer au lecteur du site, plutot qu'un message seul.
+
+        On ne bascule pas tout seul : le choix du lecteur appartient a qui
+        regarde, et il se garde dans le stockage du site, donc il durerait
+        au-dela de la panne du moment.
+
+        Appelee depuis le fil qui surveille mpv, comme `signaler` : le passage
+        par `Invoke` est obligatoire, WebView2 n'accepte que le fil de la
+        fenetre.
+        """
+        def montrer():
+            if not self.bandeau_maj(texte, core.t("lecture_essayer_site"),
+                                    self.basculer_lecteur):
+                self.signaler(texte)
+
+        try:
+            if self.InvokeRequired:
+                self.Invoke(Action(montrer))
+            else:
+                montrer()
+        except Exception as e:
+            journal("repli lecteur : %r" % (e,))
 
     def basculer_lecteur(self):
         """Passe d'un lecteur a l'autre, et recharge la page.

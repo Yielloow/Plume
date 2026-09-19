@@ -179,6 +179,9 @@ class Incrustation:
     def __init__(self, parent=None, au_probleme=None, au_action=None):
         self.parent = parent
         self.au_probleme = au_probleme     # rappel(texte) en cas d'echec
+        # Rappel(texte) quand les deux tentatives ont echoue : la fenetre peut
+        # alors proposer autre chose plutot que de laisser un message seul.
+        self.au_renoncement = None
         # rappel(nom, valeur) pour ce que la barre du lecteur demande a la
         # page : defilement, mode theatre. Appele depuis le fil d'ecoute.
         self.au_action = au_action
@@ -374,24 +377,19 @@ class Incrustation:
                 self.demarrer(self.url, self._titre, avec_cookies=True,
                               depart=self._depart)
                 return
-            if code != 0 and self.au_probleme:
+            if code != 0 and (self.au_renoncement or self.au_probleme):
                 try:
                     connecte = (core.FICHIER_COOKIES.exists() and
                                 core.FICHIER_COOKIES.stat().st_size > 2000)
-                    if connecte:
-                        message = (
-                            "La lecture a echoue, avec et sans votre session. "
-                            "YouTube a refuse le flux. Reessayer dans un "
-                            "moment, ou verifier youtube_client dans "
-                            "config.json.")
-                    else:
-                        message = (
-                            "La lecture a echoue : YouTube exige d'etre "
-                            "connecte. Connectez-vous a YouTube dans Plume "
-                            "(bouton « Se connecter », en haut a droite de la "
-                            "page), puis relancez la video. Une seule fois "
-                            "suffit, la session est conservee.")
-                    self.au_probleme(message)
+                    message = core.t("lecture_echec_flux" if connecte
+                                     else "lecture_echec_connexion")
+                    # Connecte, tout a ete essaye : le refus vient de YouTube
+                    # et rien ici n'y changera. La page sait encore lire la
+                    # video, elle : on propose ce chemin-la.
+                    if connecte and self.au_renoncement:
+                        self.au_renoncement(message)
+                    elif self.au_probleme:
+                        self.au_probleme(message)
                 except Exception:
                     pass
             return
@@ -512,8 +510,16 @@ class Incrustation:
                     # plan.
                     _interdire_activation(hwnd, not self.plein_ecran)
                     self.fenetre = hwnd
+                    # mpv a ouvert cette fenetre lui-meme, et deja visible.
+                    # Sans cette remise a plat, notre drapeau annonce
+                    # « cachee » pour une video qui est a l'ecran.
+                    self._visible = bool(user32.IsWindowVisible(hwnd))
                 if self._zone:
                     self.placer(*self._zone)
+                # Sans zone connue, `placer` n'a rien a faire : la fenetre
+                # resterait telle que mpv l'a ouverte, c'est-a-dire visible.
+                if not self._permis:
+                    self.cacher()
                 self._rendre_le_focus()
                 return
             time.sleep(0.25)
@@ -747,10 +753,18 @@ class Incrustation:
             _trace("montre en %d,%d (%dx%d)" % (x, y, largeur, hauteur))
 
     def cacher(self):
-        if self.fenetre and self._visible and not self.plein_ecran:
+        """Retire le lecteur de l'ecran, qu'il y soit de notre fait ou non.
+
+        On interroge Windows plutot que de croire notre seul drapeau : mpv
+        montre sa fenetre lui-meme, et se fier au drapeau laissait la video
+        posee sur l'onglet d'a cote.
+        """
+        if not self.fenetre or self.plein_ecran:
+            return
+        if self._visible or user32.IsWindowVisible(self.fenetre):
             _trace("cache")
             user32.ShowWindow(self.fenetre, SW_HIDE)
-            self._visible = False
+        self._visible = False
 
     # ------------------------------------------------------------------
     def arreter(self):

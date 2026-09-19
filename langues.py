@@ -91,6 +91,16 @@ TEXTES = {
         "reglages_jamais": "Jamais",
         "reglages_secondes": "%d s",
         "reglages_minutes": "%d min",
+        # --- echecs de lecture
+        "lecture_echec_flux": "La lecture a échoué, avec et sans votre "
+                              "session : YouTube a refusé le flux.",
+        "lecture_echec_connexion": "La lecture a échoué : YouTube exige "
+                                   "d'être connecté. Connectez-vous à YouTube "
+                                   "dans Plume (bouton « Se connecter », en "
+                                   "haut à droite de la page), puis relancez "
+                                   "la vidéo. Une seule fois suffit, la "
+                                   "session est conservée.",
+        "lecture_essayer_site": "Lire avec le lecteur du site",
         # --- mises a jour
         "maj_disponible": "Plume %s est disponible.",
         "maj_bouton": "Mettre à jour",
@@ -175,6 +185,14 @@ TEXTES = {
         "reglages_jamais": "Never",
         "reglages_secondes": "%d s",
         "reglages_minutes": "%d min",
+        "lecture_echec_flux": "Playback failed, with and without your "
+                              "session: YouTube refused the stream.",
+        "lecture_echec_connexion": "Playback failed: YouTube requires you to "
+                                   "be signed in. Sign in to YouTube inside "
+                                   "Plume (the Sign in button, top right of "
+                                   "the page), then start the video again. "
+                                   "Once is enough, the session is kept.",
+        "lecture_essayer_site": "Play with the site's player",
         "maj_disponible": "Plume %s is available.",
         "maj_bouton": "Update",
         "maj_telechargement": "Downloading the update... %d %%",
