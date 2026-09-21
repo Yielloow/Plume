@@ -198,6 +198,11 @@ SITES_VIDEO = (
     "soundcloud.com", "rumble.com",
 )
 SITES_LIVE = ("twitch.tv", "kick.com")
+# Les seuls sites lus par mpv. Twitch insere ses pubs dans le flux video, et
+# seul streamlink, qui alimente mpv, sait les sauter. Partout ailleurs, le
+# lecteur du site coute moins cher : mesure faite sur YouTube, 23 % d'un coeur
+# contre 31 %, et trois secondes d'extraction en moins avant l'image.
+SITES_MPV = ("twitch.tv",)
 
 
 def est_url(texte):
@@ -226,6 +231,12 @@ def hote(url):
 def est_video(url):
     h = _hote(url)
     return any(h == s or h.endswith("." + s) for s in SITES_VIDEO)
+
+
+def lu_par_mpv(url):
+    """Vrai si cette page confie sa video a mpv plutot qu'a son lecteur."""
+    h = _hote(url)
+    return any(h == s or h.endswith("." + s) for s in SITES_MPV)
 
 
 def est_live(url):
@@ -907,7 +918,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.10"
+VERSION = "1.0.11"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une

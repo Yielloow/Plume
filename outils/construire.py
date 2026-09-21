@@ -3,7 +3,7 @@
 Construit un paquet autonome de Plume, a donner tel quel.
 
 Le resultat est un dossier que l'on copie ou que l'on compresse : il contient
-Python, les bibliotheques, mpv, Deno et yt-dlp. Rien a installer sur la machine
+Python, les bibliotheques et mpv. Rien a installer sur la machine
 d'arrivee, hormis le runtime WebView2, present d'origine sur Windows 11.
 
 Ce qui n'y entre jamais : le dossier `profil/`, qui contient les cookies de
@@ -55,39 +55,6 @@ def trouver(nom, chemins):
 
 def journal(texte):
     print("  " + texte)
-
-
-def compiler_ytdlp():
-    """Fabrique un yt-dlp autonome, qui ne depend d'aucun Python installe.
-
-    Celui de pip n'est qu'un amorceur de quelques kilo-octets ; mpv l'appelant
-    par son chemin, il doit fonctionner seul sur la machine d'arrivee.
-
-    En dossier (« onedir ») et non en fichier unique, volontairement. Un exe
-    « onefile » se decompresse dans %TEMP% a chaque lancement puis execute ce
-    qu'il vient d'y ecrire : pour un antivirus, c'est le comportement d'un
-    dropper, et Defender le signale en cheval de Troie (Wacatac.B!ml). Le
-    paquet distribue a declenche cette alerte chez ses destinataires. La forme
-    en dossier n'extrait rien, donc ne presente pas ce comportement.
-
-    Renvoie un dossier contenant yt-dlp.exe, ou un fichier isole en cas de
-    repli sur celui de pip. `core.py` sait chercher les deux formes.
-    """
-    sortie = TRAVAIL / "ytdlp"
-    cmd = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
-           "--onedir", "--console", "--name", "yt-dlp",
-           "--distpath", str(sortie), "--workpath", str(TRAVAIL / "w-ytdlp"),
-           "--specpath", str(TRAVAIL),
-           "--collect-submodules", "yt_dlp",
-           str(RACINE / "outils" / "lanceur_ytdlp.py")]
-    r = subprocess.run(cmd, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
-    dossier = sortie / "yt-dlp"
-    if r.returncode != 0 or not (dossier / "yt-dlp.exe").exists():
-        journal("compilation de yt-dlp echouee, repli sur celui de pip")
-        return trouver("yt-dlp", [
-            str(Path(sys.executable).parent / "Scripts" / "yt-dlp.exe")])
-    return dossier
 
 
 def ecrire_empreintes(dossier):
@@ -217,38 +184,20 @@ def construire():
     journal("%d fichiers, plus la notice" % len(SOURCES))
 
     print("3. copie des outils externes")
+    # mpv seul : il ne lit plus que Twitch, alimente par streamlink, que
+    # l'executable fait tourner lui-meme. Le yt-dlp autonome et Deno ne
+    # servaient qu'a lui faire lire YouTube ; la recherche, elle, passe par
+    # `Plume.exe --ytdlp`.
     mpv = trouver("mpv", [r"%ProgramFiles%\MPV Player\mpv.exe"])
-    deno = None
-    base_deno = Path(os.path.expandvars(
-        r"%LOCALAPPDATA%\Microsoft\WinGet\Packages"))
-    if base_deno.exists():
-        for p in base_deno.rglob("deno.exe"):
-            deno = p
-            break
-    print("   compilation d'un yt-dlp autonome")
-    ytdlp = compiler_ytdlp()
 
     outils = dossier / "outils-externes"
     outils.mkdir(exist_ok=True)
-    for nom, chemin in (("mpv.exe", mpv), ("deno.exe", deno)):
+    for nom, chemin in (("mpv.exe", mpv),):
         if chemin and chemin.exists():
             shutil.copy2(chemin, outils / nom)
             journal("%-12s %6.1f Mo" % (nom, chemin.stat().st_size / 1048576))
         else:
             journal("%-12s ABSENT" % nom)
-
-    if ytdlp and ytdlp.is_dir():
-        shutil.copytree(ytdlp, outils / "yt-dlp", dirs_exist_ok=True)
-        poids = sum(f.stat().st_size for f in (outils / "yt-dlp").rglob("*")
-                    if f.is_file())
-        journal("%-12s %6.1f Mo  (en dossier, pas d'auto-extraction)"
-                % ("yt-dlp/", poids / 1048576))
-    elif ytdlp and ytdlp.exists():
-        shutil.copy2(ytdlp, outils / "yt-dlp.exe")
-        journal("%-12s %6.1f Mo" % ("yt-dlp.exe",
-                                    ytdlp.stat().st_size / 1048576))
-    else:
-        journal("%-12s ABSENT" % "yt-dlp")
 
     print("4. verification : aucune donnee personnelle")
     fuites = []

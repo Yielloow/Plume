@@ -155,6 +155,14 @@ Filename: "{app}\{#MonExe}"; Description: "Lancer {#MonNom}"; \
 Filename: "{app}\{#MonExe}"; Flags: nowait runasoriginaluser; \
     Check: DoitRelancer
 
+[InstallDelete]
+; Ce que les versions precedentes installaient et qui ne sert plus. Une mise a
+; jour pose les nouveaux fichiers sans retirer les anciens : sans ces lignes,
+; Deno et le yt-dlp autonome resteraient sur le disque, environ 140 Mo.
+Type: files; Name: "{app}\outils-externes\deno.exe"
+Type: filesandordirs; Name: "{app}\outils-externes\yt-dlp"
+Type: files; Name: "{app}\outils-externes\yt-dlp.exe"
+
 [UninstallDelete]
 ; Les fichiers ecrits par Plume apres l'installation : sans cela le dossier
 ; reste derriere, a moitie vide.

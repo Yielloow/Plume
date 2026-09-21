@@ -829,6 +829,116 @@ SCRIPT_SUIVANT = r"""
 })();
 """
 
+JS_SANS_PUB = r"""
+(function () {
+  var hote = location.hostname;
+  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(hote)) return;
+  if (window.__plume_sans_pub) return;
+  window.__plume_sans_pub = true;
+
+  // Une fois par page : YouTube relit plusieurs fois la meme reponse, et
+  // chaque lecture retirait les memes pubs. Mesure faite, seize signalements
+  // pour une seule video, qui auraient gonfle d'autant le compteur.
+  var signalee = "";
+  function signaler() {
+    if (signalee === location.href) return;
+    signalee = location.href;
+    try {
+      window.chrome.webview.postMessage(JSON.stringify({type: "pub"}));
+    } catch (e) {}
+  }
+
+  // --- 1. La reponse du lecteur, delestee de ses pubs.
+  // Le lecteur lit ce qu'on lui donne : sans emplacement publicitaire dans
+  // la reponse, il n'a aucune pub a jouer, et rien a detecter non plus.
+  var CLES = ["adPlacements", "adSlots", "playerAds",
+              "adBreakHeartbeatParams"];
+  function nettoyer(o) {
+    if (!o || typeof o !== "object") return o;
+    try {
+      var retire = false;
+      [o, o.playerResponse].forEach(function (r) {
+        if (!r || typeof r !== "object") return;
+        for (var i = 0; i < CLES.length; i++) {
+          if (Object.prototype.hasOwnProperty.call(r, CLES[i])) {
+            delete r[CLES[i]];
+            retire = true;
+          }
+        }
+        var m = r.auxiliaryUi && r.auxiliaryUi.messageRenderers;
+        if (m && m.enforcementMessageViewModel) {
+          delete m.enforcementMessageViewModel;
+        }
+      });
+      if (retire) signaler();
+    } catch (e) {}
+    return o;
+  }
+  var lire = JSON.parse;
+  JSON.parse = function () { return nettoyer(lire.apply(this, arguments)); };
+  var enJson = Response.prototype.json;
+  Response.prototype.json = function () {
+    return enJson.apply(this, arguments).then(nettoyer);
+  };
+  // La premiere reponse est ecrite dans la page par un script, sous la forme
+  // « var ytInitialPlayerResponse = {...} » : l'affectation passe par ici.
+  var initiale;
+  try {
+    Object.defineProperty(window, "ytInitialPlayerResponse", {
+      configurable: true,
+      get: function () { return initiale; },
+      set: function (v) { initiale = nettoyer(v); }
+    });
+  } catch (e) {}
+
+  // --- 2. Le filet, pour ce qui passerait quand meme.
+  // Le son est rendu a la fin de la pub : c'est le meme element video pour
+  // la pub et pour la video, le laisser coupe couperait la suite.
+  var coupe = false;
+  setInterval(function () {
+    var joueur = document.querySelector(".html5-video-player");
+    if (!joueur) return;
+    var v = joueur.querySelector("video");
+    if (joueur.classList.contains("ad-showing")) {
+      if (v) {
+        if (!v.muted) { v.muted = true; coupe = true; }
+        if (isFinite(v.duration) && v.duration > 0 &&
+            v.currentTime < v.duration - 0.1) {
+          v.currentTime = v.duration;
+          signaler();
+        }
+      }
+      var b = document.querySelector(
+        ".ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button");
+      if (b) b.click();
+    } else if (coupe && v) {
+      v.muted = false;
+      coupe = false;
+    }
+  }, 300);
+
+  // --- 3. Les emplacements publicitaires de la page.
+  var css = [
+    "ytd-ad-slot-renderer", "ytd-in-feed-ad-layout-renderer",
+    "ytd-banner-promo-renderer", "ytd-statement-banner-renderer",
+    "ytd-display-ad-renderer", "ytd-promoted-sparkles-web-renderer",
+    "ytd-promoted-video-renderer", "ytd-companion-slot-renderer",
+    "ytd-action-companion-ad-renderer", "#masthead-ad", "#player-ads",
+    ".ytp-ad-overlay-container", "ytd-enforcement-message-view-model",
+    "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)",
+    "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']"
+  ].join(",") + "{display:none!important}";
+  function poser() {
+    var st = document.createElement("style");
+    st.textContent = css;
+    (document.head || document.documentElement).appendChild(st);
+  }
+  if (document.documentElement) poser();
+  else document.addEventListener("readystatechange", poser, {once: true});
+})();
+"""
+
+
 JS = r"""
 (function () {
   if (window.__plume) return;
@@ -927,14 +1037,12 @@ JS = r"""
     "search","team","jobs","legal","privacy","security","login","signup","popout",
     "moderator","payments","inventory","clips"];
 
+  // Seul Twitch confie sa video a mpv : il insere ses pubs dans le flux, et
+  // seul streamlink sait les sauter. Ailleurs le lecteur du site coute moins
+  // cher, et les pubs de YouTube sont retirees dans la page (JS_SANS_PUB).
   function estPageVideo(u) {
-    if (/youtube\.com\/(watch\?|shorts\/|live\/)/.test(u)) return true;
-    if (/youtu\.be\/[\w-]+/.test(u)) return true;
-    if (/vimeo\.com\/\d+/.test(u)) return true;
-    if (/dailymotion\.com\/video\//.test(u)) return true;
     var m = u.match(/^https?:\/\/(?:www\.)?twitch\.tv\/([A-Za-z0-9_]+)(?:[\/?#]|$)/i);
     if (m && TWITCH_RESERVES.indexOf(m[1].toLowerCase()) === -1) return true;
-    if (/^https?:\/\/(?:www\.)?kick\.com\/[A-Za-z0-9_-]+$/i.test(u)) return true;
     return false;
   }
 
@@ -1082,6 +1190,9 @@ class Onglet(object):
         try:
             noyau = self.vue.CoreWebView2
             noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS)
+            # A part de JS, qui se retire quand on choisit le lecteur du site :
+            # c'est justement la que les pubs de YouTube passeraient.
+            noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS_SANS_PUB)
             noyau.WebMessageReceived += self.au_message
             noyau.NewWindowRequested += self.au_nouvelle_fenetre
             noyau.NavigationStarting += self.au_depart_navigation
@@ -1708,7 +1819,8 @@ class Navigateur(Form):
         ui.cadenas(g, ui.TEXTE2, r.X + 15, r.Y + (r.Height - 11) / 2.0)
 
         self._rect_lecteur = Rectangle(0, 0, 0, 0)
-        if self.actif and core.est_video(self.actif.url or ""):
+        # Le choix du lecteur n'a de sens que la ou mpv peut lire.
+        if self.actif and core.lu_par_mpv(self.actif.url or ""):
             self._rect_lecteur = Rectangle(r.Right - 56,
                                            r.Y + (r.Height - 20) // 2, 22, 20)
             plume = not self.actif.lecteur_site
@@ -4629,6 +4741,11 @@ class Navigateur(Form):
                                  daemon=True).start()
             elif action == "annuler":
                 self._maj_annulee = True
+            return
+        if genre == "pub":
+            # Une pub retiree de la reponse du lecteur, ou sautee au vol :
+            # elle compte avec les requetes refusees sur la page d'accueil.
+            self.pubs_bloquees += 1
             return
         if genre == "reglage":
             # Demande venue de la page d'accueil, qui est un fichier local a
