@@ -69,6 +69,20 @@ EXECUTABLE = (sys.executable if EN_PAQUET
 # Cookies exportes par le navigateur, au format Netscape. On ne peut pas lire
 # la base du profil pendant qu'il tourne : il la verrouille.
 FICHIER_COOKIES = APP_DIR / "profil" / "cookies.txt"
+
+
+def effacer_ancien_export_cookies():
+    """Efface le fichier ou les versions precedentes exportaient la session.
+
+    Elles y ecrivaient les cookies YouTube en clair, pour yt-dlp. Il ne lit
+    plus YouTube : le fichier n'a plus de raison d'exister, et il ne doit pas
+    rester sur le disque de ceux qui mettent a jour. Appele au demarrage de
+    l'application, pas a l'import : un import ne doit rien effacer.
+    """
+    try:
+        FICHIER_COOKIES.unlink()
+    except OSError:
+        pass
 # Dans profil/, donc jamais dans le paquet distribue : les favoris disent ou
 # l'utilisateur va, c'est personnel.
 FICHIER_FAVORIS = APP_DIR / "profil" / "favoris.json"

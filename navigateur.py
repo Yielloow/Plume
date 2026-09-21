@@ -174,6 +174,12 @@ TYPE_PROCEDURE = ctypes.WINFUNCTYPE(ctypes.c_longlong, ctypes.c_void_p,
                                     ctypes.c_uint, ctypes.c_void_p,
                                     ctypes.c_void_p)
 GWLP_WNDPROC = -4
+WM_MOUSEACTIVATE = 0x0021
+MA_NOACTIVATE = 3
+# Les procedures des fenetres flottantes, gardees vivantes : liberees par le
+# ramasse-miettes alors que Windows les connait encore, elles feraient tomber
+# le processus au message suivant.
+_PROCEDURES_FLOTTANTES = {}
 user32.CallWindowProcW.argtypes = [ctypes.c_void_p, ctypes.c_void_p,
                                    ctypes.c_uint, ctypes.c_void_p,
                                    ctypes.c_void_p]
@@ -373,8 +379,6 @@ MODELE_ACCUEIL = """<!doctype html>
                     color:#8f8f9e; font:inherit; padding:4px 9px;
                     border-radius:7px; cursor:pointer; }
  .reglages button:hover { color:#fbfbfe; }
- .reglages button[aria-pressed="true"] { color:#fbfbfe; background:#26252f;
-                                         border-color:#3a3944; }
  .reglages .defaut { display:inline-flex; align-items:center; gap:7px;
                      border:1px solid #3a3944; border-radius:999px;
                      padding:7px 15px 7px 11px; color:#c9c3dd;
@@ -391,11 +395,6 @@ MODELE_ACCUEIL = """<!doctype html>
 </style></head><body>
  <div class="reglages">
 %(bouton_defaut)s
-   <span>%(langue_nom)s</span>
-   <button data-langue="fr" aria-pressed="%(fr_choisie)s"
-           onclick="changerLangue('fr')">FR</button>
-   <button data-langue="en" aria-pressed="%(en_choisie)s"
-           onclick="changerLangue('en')">EN</button>
  </div>
  <h1>Plume<span>.</span></h1>
  <form onsubmit="chercher(event)">
@@ -446,9 +445,6 @@ MODELE_ACCUEIL = """<!doctype html>
    if (indices.length) {
      poster({type:"travail", action:"couleurs", nom:nom, indices:indices});
    }
- }
- function changerLangue(code) {
-   poster({type:"reglage", cle:"langue", valeur:code});
  }
  function devenirDefaut() {
    poster({type:"reglage", cle:"defaut"});
@@ -511,8 +507,8 @@ MOTEURS = (
     ("https://www.ecosia.org/search?q={q}", "Ecosia"),
     ("https://www.bing.com/search?q={q}", "Bing"),
 )
-QUALITES = ((720, "720p"), (1080, "1080p"), (1440, "1440p"), (2160, "2160p"))
-IMAGES = ((30, "30 fps"), (60, "60 fps"), (120, "120 fps"))
+# Les hauteurs que Twitch diffuse reellement : au-dela de 1440, rien.
+QUALITES = ((480, "480p"), (720, "720p"), (1080, "1080p"), (1440, "1440p"))
 VEILLES = (0, 30, 90, 300, 600, 1800)   # secondes, 0 pour jamais
 FENETRES = []         # fenetres Plume ouvertes, dans l'ordre de creation
 DERNIERE = [None]     # derniere fenetre activee, cible des ouvertures
@@ -619,6 +615,36 @@ RDW_FRAME = 0x0400
 # quatre lignes, 227,227,227 puis 255,255,255 puis deux fois 180,180,180. On
 # repeint un peu plus large, la marge ne coute rien.
 HAUTEUR_CADRE_SYSTEME = 8
+
+
+def rendre_inactivable(fenetre):
+    """Un clic sur cette fenetre ne l'active pas, et le clic arrive quand meme.
+
+    WS_EX_NOACTIVATE n'agit qu'a travers la reponse par defaut a
+    WM_MOUSEACTIVATE, et WinForms repond lui-meme a ce message : mesure faite,
+    le panneau des parametres prenait le premier plan a chaque clic, et la
+    fenetre de Plume perdait la main. On y repond ici, MA_NOACTIVATE : pas
+    d'activation, mais le message du clic est bien livre.
+    """
+    poignee = fenetre.Handle.ToInt64()
+    if poignee in _PROCEDURES_FLOTTANTES:
+        return
+    ancienne = [0]
+
+    def traiter(hwnd, msg, wparam, lparam):
+        try:
+            if msg == WM_MOUSEACTIVATE:
+                return MA_NOACTIVATE
+        except Exception:
+            pass
+        return user32.CallWindowProcW(ctypes.c_void_p(ancienne[0]), hwnd, msg,
+                                      wparam, lparam)
+
+    procedure = TYPE_PROCEDURE(traiter)
+    adresse = ctypes.cast(procedure, ctypes.c_void_p).value
+    ancienne[0] = _ecrire_style(ctypes.c_void_p(poignee), GWLP_WNDPROC,
+                                adresse)
+    _PROCEDURES_FLOTTANTES[poignee] = procedure
 
 
 def rafraichir_cadre(poignee):
@@ -1111,7 +1137,7 @@ class Onglet(object):
     def __init__(self, navigateur, url):
         self.nav = navigateur
         self.url = url
-        self.titre = "Nouvel onglet"
+        self.titre = core.t("tache_onglet")
         self.favicon = None
         # Chaque onglet a son lecteur : changer d'onglet ne doit pas tuer la
         # video, seulement la mettre de cote. Au retour, elle reprend ou elle
@@ -1180,6 +1206,10 @@ class Onglet(object):
         # qu'on avait clique dans la page. Le controle WinForms reexpose les
         # touches d'accelerateur : on s'y branche.
         self.vue.KeyDown += navigateur.au_clavier
+        # Un clic dans la page donne le focus au controle : c'est le seul
+        # signal qu'on en a, la page tournant dans son propre processus. Le
+        # panneau des parametres se ferme alors, comme tout menu.
+        self.vue.GotFocus += self.au_focus_page
 
         self.vue.CoreWebView2InitializationCompleted += self.au_pret
         self.vue.EnsureCoreWebView2Async(None)
@@ -1368,6 +1398,12 @@ class Onglet(object):
         if self.nav.actif is self:
             self.nav.rafraichir_navigation()
 
+    def au_focus_page(self, envoyeur, args):
+        try:
+            self.nav.fermer_reglages()
+        except Exception:
+            pass
+
     def au_depart_navigation(self, envoyeur, args):
         self.avancer_a(0.08)
 
@@ -1452,12 +1488,12 @@ class Onglet(object):
                     chemin = operation.ResultFilePath or ""
                     nom = chemin.replace("\\", "/").split("/")[-1]
                     dossier = chemin[:len(chemin) - len(nom)].rstrip("/\\")
-                    self.nav.signaler("Telecharge : %s  (dans %s)"
-                                      % (nom, dossier), erreur=False)
+                    self.nav.signaler(core.t("telecharge", nom, dossier),
+                                      erreur=False)
                     journal("telechargement termine : %s" % chemin)
                 elif etat == "Interrupted":
-                    self.nav.signaler("Telechargement interrompu : %s"
-                                      % operation.InterruptReason)
+                    self.nav.signaler(core.t("telechargement_interrompu",
+                                             operation.InterruptReason))
                     journal("telechargement interrompu : %s"
                             % operation.InterruptReason)
             except Exception:
@@ -1540,7 +1576,7 @@ class Navigateur(Form):
         # Elle apparait en fondu : posee a zero des la construction, sinon un
         # cadre opaque serait deja a l'ecran quand l'animation demarre.
         self.Opacity = 1.0 if vide else 0.0
-        self.Text = "Plume, fenetre privee" if privee else "Plume"
+        self.Text = core.t("titre_fenetre_privee") if privee else "Plume"
         self.Size = Size(1440, 900)
         self.MinimumSize = Size(900, 560)
         # Un pixel de marge tout autour, rempli par le fond du formulaire :
@@ -1576,7 +1612,6 @@ class Navigateur(Form):
         self._procedure = None          # notre procedure de fenetre
         self._ancienne_procedure = None  # celle de WinForms, que l'on chaine
         self._avant_agrandissement = None
-        self._cookies_exportes = 0.0
         # Le deplacement de la fenetre appartient a Windows depuis que la
         # partie libre de la barre repond HTCAPTION : il n'y a plus d'etat a
         # tenir ici. Seul le deplacement d'un ONGLET reste a nous.
@@ -1613,6 +1648,11 @@ class Navigateur(Form):
         self._attente_cadre = None   # minuteur du repeint de fin de fondu
         self._menu = None         # fenetre du menu contextuel
         self._reglages = None     # fenetre du panneau des parametres
+        # Tenu par nous : le panneau est montre par SetWindowPos, que la
+        # propriete Visible de WinForms ne voit pas. Mesure faite, elle restait
+        # fausse et la roue rouvrait le panneau au lieu de le fermer.
+        self._reglages_ouverts = False
+        self._guet_clic = None    # minuteur qui guette un clic hors des menus
         self._items_reglages = []
         self._survol_reglage = -1
         self._rect_roue = Rectangle(0, 0, 0, 0)
@@ -1651,6 +1691,11 @@ class Navigateur(Form):
         self.KeyDown += self.au_clavier
         # le lecteur doit coller a la fenetre, pas la suivre avec un temps de retard
         self.Activated += self.a_ete_activee
+        # Le panneau et le menu se ferment quand la fenetre perd la main, comme
+        # tout menu. Les fermer quand elle la REPREND faisait l'inverse de ce
+        # qu'on voulait : le clic sur la roue qui reactive la fenetre fermait
+        # le panneau, puis la roue le rouvrait.
+        self.Deactivate += self.a_perdu_la_main
         self.Move += self.au_deplacement
         self.Resize += self.au_redimensionnement
         self.Shown += self.au_demarrage
@@ -1934,11 +1979,17 @@ class Navigateur(Form):
         h = core.hote(url or "")
         if not h or image is None:
             return
-        # Seulement les sites mis en favori : garder l'icone de tout ce qui est
+        # Seulement les sites que la personne a choisi de garder, en favori
+        # ou dans un groupe de travail : garder l'icone de tout ce qui est
         # visite ferait grossir le dossier sans fin, et reviendrait a tenir une
-        # liste des sites frequentes.
-        if not any(core.hote(f.get("url") or "") == h
-                   for f in self.favoris["elements"]):
+        # liste des sites frequentes. Les groupes en font partie, sans quoi
+        # leurs cartes n'avaient jamais d'icone.
+        gardes = {core.hote(f.get("url") or "")
+                  for f in self.favoris["elements"]}
+        for groupe in getattr(self, "travail", None) or []:
+            for page in groupe.get("onglets") or []:
+                gardes.add(core.hote(page.get("url") or ""))
+        if h not in gardes:
             return
         chemin = core.DOSSIER_FAVICONS / (h + ".png")
         if chemin.exists():
@@ -3047,9 +3098,8 @@ class Navigateur(Form):
                 '<a class="tuile" href="%s">%s<span>%s</span></a>'
                 % (_echapper(url), icone, _echapper(titre)))
         if not morceaux:
-            return ('<p class="vide">Aucun favori pour l\'instant. '
-                    'L\'etoile, a droite de la barre d\'adresse, en ajoute un.'
-                    '</p>')
+            return ('<p class="vide">%s</p>'
+                    % _echapper(core.t("accueil_aucun_favori")))
         return '<div class="tuiles">%s</div>' % "".join(morceaux)
 
     def _icones_groupe(self, onglets, combien=3):
@@ -3095,9 +3145,8 @@ class Navigateur(Form):
         """
         self.recharger_travail()
         if not self.travail:
-            return ('<p class="vide">Aucun groupe de travail. Clic droit sur '
-                    'un onglet pour en creer un : il rouvrira toutes ses pages '
-                    'd\'un seul geste.</p>')
+            return ('<p class="vide">%s</p>'
+                    % _echapper(core.t("accueil_aucun_groupe")))
         def teinte(indice):
             c = ui.couleur_groupe(indice)
             return "#%02x%02x%02x" % (c.R, c.G, c.B)
@@ -3228,9 +3277,6 @@ class Navigateur(Form):
                 "travaux": self._cartes_travail(),
                 "langue_page": langue,
                 "recherche": _echapper(core.t("accueil_recherche")),
-                "langue_nom": _echapper(core.t("accueil_langue")),
-                "fr_choisie": "true" if langue == "fr" else "false",
-                "en_choisie": "true" if langue == "en" else "false",
                 "bouton_defaut": bouton,
                 "pied_pubs": _echapper(
                     core.t("accueil_pubs", self.pubs_bloquees,
@@ -3516,20 +3562,25 @@ class Navigateur(Form):
                                  if (o["url"] or "").rstrip("/") != cle]
             self.signaler(core.t("retire_de", nom), erreur=False)
         elif len(groupe["onglets"]) >= core.MAX_ONGLETS_TRAVAIL:
-            self.signaler("« %s » contient deja %d onglets : c'est le maximum, "
-                          "les rouvrir tous doit rester tenable."
-                          % (nom, core.MAX_ONGLETS_TRAVAIL))
+            self.signaler(core.t("groupe_plein", nom,
+                                 core.MAX_ONGLETS_TRAVAIL))
             return
         else:
             groupe["onglets"].append({"url": onglet.url,
                                       "titre": onglet.titre or onglet.url})
             self.signaler(core.t("ajoute_a", nom), erreur=False)
+            # L'icone de l'onglet est deja en memoire : on la garde tout de
+            # suite, et AVANT d'enregistrer le groupe, qui reecrit l'accueil ;
+            # dans l'autre ordre, la carte restait sans icone jusqu'a la
+            # reecriture suivante.
+            if getattr(onglet, "favicon", None) is not None:
+                self.memoriser_favicon(onglet.url, onglet.favicon)
         self.enregistrer_travail()
 
     def creer_groupe_travail(self, onglet=None):
         """Demande un nom, cree le groupe, et y range l'onglet vise."""
-        nom = self.demander_texte("Nouveau groupe de travail",
-                                  "Son nom, par exemple : dev")
+        nom = self.demander_texte(core.t("groupe_nouveau_titre"),
+                                  core.t("groupe_nouveau_aide"))
         nom = (nom or "").strip()[:28]
         if not nom:
             return
@@ -3549,16 +3600,14 @@ class Navigateur(Form):
         self.recharger_travail()
         self.travail = [gr for gr in self.travail if gr["nom"] != nom]
         self.enregistrer_travail()
-        self.signaler("Groupe « %s » supprime. Les onglets ouverts restent "
-                      "ouverts." % nom, erreur=False)
+        self.signaler(core.t("groupe_supprime", nom), erreur=False)
 
     def ouvrir_groupe_travail(self, nom):
         """Rouvre toutes les pages d'un groupe, sans doubler celles deja la."""
         self.recharger_travail()
         groupe = core.groupe_travail(self.travail, nom)
         if groupe is None or not groupe["onglets"]:
-            self.signaler("Le groupe « %s » ne contient encore aucune page : "
-                          "clic droit sur un onglet pour l'y ranger." % nom)
+            self.signaler(core.t("groupe_vide", nom))
             return 0
         deja = set((o.url or "").rstrip("/") for o in self.onglets)
         ouverts = 0
@@ -3571,9 +3620,9 @@ class Navigateur(Form):
             ouverts += 1
         if premier is not None:
             self.activer(premier)
-        self.signaler("« %s » : %d onglet%s ouvert%s."
-                      % (nom, ouverts, "s" if ouverts > 1 else "",
-                         "s" if ouverts > 1 else ""), erreur=False)
+        self.signaler(core.t("groupe_ouvert", nom, ouverts,
+                             *core.marques_pluriel("groupe_ouvert", ouverts)),
+                      erreur=False)
         return ouverts
 
     def menu_onglet(self, onglet, ecran_x, ecran_y):
@@ -3721,6 +3770,7 @@ class Navigateur(Form):
             ctypes.c_void_p(HWND_TOPMOST), x, y, largeur, hauteur,
             SWP_NOACTIVATE | SWP_SHOWWINDOW)
         self._menu.Invalidate()
+        self._guetter_clic_exterieur()
 
     def _creer_menu(self):
         try:
@@ -3738,6 +3788,7 @@ class Navigateur(Form):
             style = _lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE)
             _ecrire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE,
                           int(style) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            rendre_inactivable(menu)
             return menu
         except Exception as e:
             journal("menu : %s" % e)
@@ -3748,7 +3799,7 @@ class Navigateur(Form):
     # ------------------------------------------------------------------
     def basculer_reglages(self):
         """Ouvre le panneau, ou le referme s'il est deja la."""
-        if self._reglages is not None and self._reglages.Visible:
+        if self._reglages_ouverts:
             return self.fermer_reglages()
         self.ouvrir_reglages()
 
@@ -3764,8 +3815,6 @@ class Navigateur(Form):
                   "texte": core.t("reglages_moteur"), "valeurs": MOTEURS},
                  {"genre": "choix", "cle": "qualite_max",
                   "texte": core.t("reglages_qualite"), "valeurs": QUALITES},
-                 {"genre": "choix", "cle": "fps_max",
-                  "texte": core.t("reglages_fps"), "valeurs": IMAGES},
                  {"genre": "choix", "cle": "veille_onglets",
                   "texte": core.t("reglages_veille"),
                   "valeurs": tuple((v, self._dire_veille(v))
@@ -3776,10 +3825,7 @@ class Navigateur(Form):
                   "valeur": bool(cfg.get("intro", True))},
                  {"genre": "bascule", "cle": "glissement_onglets",
                   "texte": core.t("reglages_glissement"),
-                  "valeur": bool(cfg.get("glissement_onglets", True))},
-                 {"genre": "bascule", "cle": "miniatures",
-                  "texte": core.t("reglages_miniatures"),
-                  "valeur": bool(cfg.get("miniatures", True))}]
+                  "valeur": bool(cfg.get("glissement_onglets", True))}]
         # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
         # disparait, au lieu de rester a repeter un etat.
         if not core.est_navigateur_par_defaut():
@@ -3829,6 +3875,8 @@ class Navigateur(Form):
             ctypes.c_void_p(self._reglages.Handle.ToInt64()),
             ctypes.c_void_p(HWND_TOPMOST), x, y, L_REGLAGES, hauteur,
             SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        self._reglages_ouverts = True
+        self._guetter_clic_exterieur()
         self._reglages.Invalidate()
 
     def _creer_panneau_reglages(self):
@@ -3847,6 +3895,7 @@ class Navigateur(Form):
             style = _lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE)
             _ecrire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE,
                           int(style) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            rendre_inactivable(panneau)
             return panneau
         except Exception as e:
             journal("parametres : %s" % e)
@@ -3854,8 +3903,9 @@ class Navigateur(Form):
 
     def fermer_reglages(self):
         self._survol_reglage = -1
-        if self._reglages is None:
+        if self._reglages is None or not self._reglages_ouverts:
             return
+        self._reglages_ouverts = False
         try:
             user32.ShowWindow(
                 ctypes.c_void_p(self._reglages.Handle.ToInt64()), 0)
@@ -4020,6 +4070,56 @@ class Navigateur(Form):
         self._items_reglages = self._items_de_reglages()
         if self._reglages is not None:
             self._reglages.Invalidate()
+
+    def _guetter_clic_exterieur(self):
+        """Ferme panneau et menu au premier clic hors d'eux.
+
+        Ils ne prennent jamais l'activation, pour que la page garde le
+        clavier : Windows ne les previent donc pas d'un clic ailleurs, et
+        `GotFocus` sur la page ne vient pas si elle avait deja le focus.
+        On regarde le bouton de la souris, toutes les 60 ms, et seulement
+        tant que quelque chose est ouvert.
+        """
+        if self._guet_clic is None:
+            minuteur = Timer()
+            minuteur.Interval = 60
+            minuteur.Tick += self._battre_guet
+            self._guet_clic = minuteur
+        self._guet_clic.Start()
+
+    def _battre_guet(self, envoyeur, args):
+        ouverts = []
+        if self._reglages_ouverts and self._reglages is not None:
+            ouverts.append(self._reglages)
+        if self._items_menu and self._menu is not None:
+            ouverts.append(self._menu)
+        if not ouverts:
+            self._guet_clic.Stop()
+            return
+        presse = ((user32.GetAsyncKeyState(0x01) & 0x8000)
+                  or (user32.GetAsyncKeyState(0x02) & 0x8000))
+        if not presse:
+            return
+        curseur = POINT_WIN()
+        user32.GetCursorPos(ctypes.byref(curseur))
+        # La position se lit chez Windows : ces fenetres sont placees par
+        # SetWindowPos, que les bornes de WinForms ne suivent pas.
+        for fenetre in ouverts:
+            r = RECT_WIN()
+            user32.GetWindowRect(ctypes.c_void_p(fenetre.Handle.ToInt64()),
+                                 ctypes.byref(r))
+            if r.gauche <= curseur.x < r.droite and r.haut <= curseur.y < r.bas:
+                return
+        # La roue a sa propre bascule : la laisser faire, sinon le guet
+        # fermerait le panneau et le clic le rouvrirait aussitot.
+        try:
+            roue = self.barre_nav.RectangleToScreen(self._rect_roue)
+            if roue.Contains(curseur.x, curseur.y):
+                return
+        except Exception:
+            pass
+        self.fermer_reglages()
+        self.fermer_menu()
 
     def fermer_menu(self):
         self._items_menu = []
@@ -4228,6 +4328,7 @@ class Navigateur(Form):
             except Exception:
                 pass
         self.actif = onglet
+        self.fermer_reglages()
         # Le fil appartient a l'onglet : changer d'onglet doit montrer le sien,
         # pas laisser celui d'avant.
         self.rafraichir_navigation()
@@ -4577,7 +4678,7 @@ class Navigateur(Form):
             self.zooms[hote] = facteur
         core.enregistrer_zooms(self.zooms)
         self.appliquer_zoom(self.actif)
-        self.signaler("Zoom %d %% sur %s" % (round(facteur * 100), hote),
+        self.signaler(core.t("zoom", round(facteur * 100), hote),
                       erreur=False)
 
     def appliquer_zoom(self, onglet):
@@ -4647,6 +4748,7 @@ class Navigateur(Form):
             return
         if args.Control and args.KeyCode == Keys.L:
             args.SuppressKeyPress = True
+            self.fermer_reglages()        # on va taper une adresse
             self.champ.Focus()
             self.champ.SelectAll()
         elif args.Control and args.KeyCode == Keys.D:
@@ -4751,10 +4853,7 @@ class Navigateur(Form):
             # Demande venue de la page d'accueil, qui est un fichier local a
             # nous : elle n'a pas d'autre moyen de parler a l'application.
             cle = str(message.get("cle") or "")
-            if cle == "langue":
-                if core.definir_langue(str(message.get("valeur") or "")):
-                    self.appliquer_langue()
-            elif cle == "defaut":
+            if cle == "defaut":
                 core.ouvrir_reglages_defaut()
             return
         if genre != "zone":
@@ -4762,11 +4861,6 @@ class Navigateur(Form):
                     % (genre, onglet is self.actif,
                        str(message.get("url"))[:60]))
         if genre == "url":
-            # le fichier doit exister avant la premiere lecture : on l'ecrit
-            # des qu'une page est chargee, sans attendre qu'une video s'ouvre
-            if time.time() - self._cookies_exportes > 60:
-                self._cookies_exportes = time.time()
-                self.exporter_cookies()
             onglet.url = message.get("url") or onglet.url
             onglet.lecteur_site = False     # le script parle, donc il agit
             self.noter_historique(onglet.url, message.get("titre") or "")
@@ -4793,34 +4887,6 @@ class Navigateur(Form):
             self.demarrer_video(onglet, message.get("url"), message.get("titre"))
         elif genre == "zone":
             self.placer_lecteur(onglet, message)
-
-    def exporter_cookies(self):
-        """Ecrit les cookies YouTube dans un fichier, pour yt-dlp.
-
-        On ne peut pas lire la base du profil pendant que le navigateur tourne :
-        il la verrouille. On passe donc par l'API de WebView2, qui donne les
-        cookies dechiffres, et on les ecrit au format Netscape que yt-dlp lit
-        avec --cookies.
-        """
-        if not self.actif or not self.actif.vue.CoreWebView2:
-            return
-        try:
-            gestionnaire = self.actif.vue.CoreWebView2.CookieManager
-            tache = gestionnaire.GetCookiesAsync("https://www.youtube.com")
-        except Exception as e:
-            journal("cookies : %s" % e)
-            return
-
-        def quand_pret(terminee):
-            # Le resultat contient des objets COM de WebView2 : les lire depuis
-            # le fil du pool leve « Unable to cast to ICoreWebView2Cookie ».
-            # Tout se fait donc sur le fil d'interface.
-            self.Invoke(Action(lambda: self._ecrire_cookies(terminee)))
-
-        try:
-            tache.ContinueWith(Action[Task](quand_pret))
-        except Exception as e:
-            journal("cookies : %s" % e)
 
     def _ecrire_cookies(self, terminee):
             try:
@@ -5108,7 +5174,6 @@ class Navigateur(Form):
         if (core.cle_video(onglet.incrustation.url) == core.cle_video(url)
                 and onglet.incrustation.en_cours()):
             return                      # deja en cours : ne pas tout relancer
-        self.exporter_cookies()      # yt-dlp en a besoin pour YouTube
         journal("video : %s  (pubs bloquees jusqu'ici : %d)"
                 % (url, self.pubs_bloquees))
         onglet.incrustation.definir_parent(self.Handle.ToInt64())
@@ -5535,10 +5600,13 @@ class Navigateur(Form):
         except Exception as e:
             journal("taches : %s" % e)
 
+    def a_perdu_la_main(self, envoyeur, args):
+        self.fermer_reglages()
+        self.fermer_menu()
+
     def a_ete_activee(self, envoyeur, args):
         DERNIERE[0] = self
         self.fermer_menu()
-        self.fermer_reglages()
         self.verifier_defaut()
 
     def verifier_defaut(self):
@@ -5573,8 +5641,7 @@ class Navigateur(Form):
         journal("fenetre ouverte : %s%s"
                 % (str(url)[:90], " (privee)" if privee else ""))
         if len(FENETRES) >= MAX_FENETRES:
-            self.signaler("Plume n'ouvre pas plus de %d fenetres : chaque "
-                          "onglet coute environ 390 Mo." % MAX_FENETRES)
+            self.signaler(core.t("trop_fenetres", MAX_FENETRES))
             return None
         autre = Navigateur(url, None, bornes, privee, vide)
         autre.Show()
@@ -6078,6 +6145,7 @@ def boucle(depart, privee=False):
 
 
 def main():
+    core.effacer_ancien_export_cookies()
     arguments = sys.argv[1:]
     veut_fenetre = "--nouvelle-fenetre" in arguments
     veut_privee = "--fenetre-privee" in arguments

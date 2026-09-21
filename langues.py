@@ -38,6 +38,9 @@ TEXTES = {
         "menu_retirer_de": "Retirer de « %s »",
         "menu_ajouter_a": "Ajouter à « %s »",
         "menu_nouveau_groupe": "Nouveau groupe de travail...",
+        "groupe_nouveau_titre": "Nouveau groupe de travail",
+        "groupe_nouveau_aide": "Son nom, par exemple : dev",
+        "titre_fenetre_privee": "Plume, fenêtre privée",
         "menu_fermer": "Fermer l'onglet",
         "menu_fermer_autres": "Fermer les autres onglets",
         # --- page d'accueil
@@ -54,6 +57,11 @@ TEXTES = {
                                "lui-même : le bouton ouvre la page des "
                                "Paramètres où vous pouvez le choisir.",
         "accueil_langue": "Langue",
+        "accueil_aucun_favori": "Aucun favori pour l'instant : l'étoile, à "
+                                "droite de la barre d'adresse, en ajoute un.",
+        "accueil_aucun_groupe": "Aucun groupe de travail. Clic droit sur un "
+                                "onglet pour en créer un : il rouvrira toutes "
+                                "ses pages d'un seul geste.",
         "tache_fenetre": "Nouvelle fenêtre",
         "tache_privee": "Nouvelle fenêtre privée",
         "tache_onglet": "Nouvel onglet",
@@ -82,11 +90,9 @@ TEXTES = {
         # --- panneau des parametres
         "reglages_titre": "Paramètres",
         "reglages_moteur": "Moteur de recherche",
-        "reglages_qualite": "Qualité maximale",
-        "reglages_fps": "Images par seconde",
+        "reglages_qualite": "Qualité des lives Twitch",
         "reglages_intro": "Animation d'ouverture",
         "reglages_glissement": "Glissement des onglets",
-        "reglages_miniatures": "Miniatures des résultats",
         "reglages_veille": "Veille des onglets",
         "reglages_jamais": "Jamais",
         "reglages_secondes": "%d s",
@@ -101,6 +107,8 @@ TEXTES = {
                                    "la vidéo. Une seule fois suffit, la "
                                    "session est conservée.",
         "lecture_essayer_site": "Lire avec le lecteur du site",
+        "lecture_echec_live": "La lecture du live a échoué dans le lecteur "
+                              "de Plume.",
         # --- mises a jour
         "maj_disponible": "Plume %s est disponible.",
         "maj_bouton": "Mettre à jour",
@@ -138,6 +146,9 @@ TEXTES = {
         "menu_retirer_de": "Remove from “%s”",
         "menu_ajouter_a": "Add to “%s”",
         "menu_nouveau_groupe": "New work group...",
+        "groupe_nouveau_titre": "New work group",
+        "groupe_nouveau_aide": "Its name, for example: dev",
+        "titre_fenetre_privee": "Plume, private window",
         "menu_fermer": "Close tab",
         "menu_fermer_autres": "Close other tabs",
         "accueil_recherche": "Search, or type an address",
@@ -152,6 +163,11 @@ TEXTES = {
                                "button opens the Settings page where you can "
                                "choose it.",
         "accueil_langue": "Language",
+        "accueil_aucun_favori": "No bookmarks yet: the star, on the right of "
+                                "the address bar, adds one.",
+        "accueil_aucun_groupe": "No work group yet. Right-click a tab to "
+                                "create one: it will reopen all its pages in "
+                                "one go.",
         "tache_fenetre": "New window",
         "tache_privee": "New private window",
         "tache_onglet": "New tab",
@@ -176,11 +192,9 @@ TEXTES = {
         "bulle_reglages": "Settings",
         "reglages_titre": "Settings",
         "reglages_moteur": "Search engine",
-        "reglages_qualite": "Maximum quality",
-        "reglages_fps": "Frames per second",
+        "reglages_qualite": "Twitch live quality",
         "reglages_intro": "Opening animation",
         "reglages_glissement": "Tab sliding",
-        "reglages_miniatures": "Result thumbnails",
         "reglages_veille": "Tab sleep",
         "reglages_jamais": "Never",
         "reglages_secondes": "%d s",
@@ -193,6 +207,7 @@ TEXTES = {
                                    "the page), then start the video again. "
                                    "Once is enough, the session is kept.",
         "lecture_essayer_site": "Play with the site's player",
+        "lecture_echec_live": "The live stream failed in Plume's player.",
         "maj_disponible": "Plume %s is available.",
         "maj_bouton": "Update",
         "maj_telechargement": "Downloading the update... %d %%",

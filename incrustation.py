@@ -370,7 +370,11 @@ class Incrustation:
             # Un echec rapide sans cookies vient souvent d'une video qui exige
             # la session : restriction d'age, ou controle anti-robot. On
             # rejoue une fois avec, plutot que d'abandonner.
+            # La relance avec la session ne vaut que pour une video a la
+            # demande : un live passe par streamlink, qui ne lit pas les
+            # cookies.
             if (code != 0 and not self._avec_cookies
+                    and not core.est_live(self.url or "")
                     and core.CONFIG.get("cookies_navigateur")
                     and core.FICHIER_COOKIES.exists()
                     and core.FICHIER_COOKIES.stat().st_size > 2000):
@@ -381,8 +385,15 @@ class Incrustation:
                 try:
                     connecte = (core.FICHIER_COOKIES.exists() and
                                 core.FICHIER_COOKIES.stat().st_size > 2000)
-                    message = core.t("lecture_echec_flux" if connecte
-                                     else "lecture_echec_connexion")
+                    # mpv ne lit plus que les lives : l'echec n'a rien a voir
+                    # avec une session YouTube, et le lecteur du site reste la
+                    # sortie la plus simple.
+                    if core.est_live(self.url or ""):
+                        connecte = True
+                        message = core.t("lecture_echec_live")
+                    else:
+                        message = core.t("lecture_echec_flux" if connecte
+                                         else "lecture_echec_connexion")
                     # Connecte, tout a ete essaye : le refus vient de YouTube
                     # et rien ici n'y changera. La page sait encore lire la
                     # video, elle : on propose ce chemin-la.
@@ -469,6 +480,11 @@ class Incrustation:
                 "--stream-segment-threads", "2",
                 "--retry-streams", "3",
                 "--retry-max", "5",
+                # Le plafond de qualite des parametres. Streamlink pese
+                # « 720p60 » a 780 : un seuil ecrit « >720p » exclurait le
+                # 720p a 60 images, d'ou le suffixe.
+                "--stream-sorting-excludes",
+                ">%dp60" % int(core.CONFIG.get("qualite_max", 1080)),
                 url, "best",
             ],
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
