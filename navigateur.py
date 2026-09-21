@@ -3826,10 +3826,11 @@ class Navigateur(Form):
                  {"genre": "bascule", "cle": "glissement_onglets",
                   "texte": core.t("reglages_glissement"),
                   "valeur": bool(cfg.get("glissement_onglets", True))}]
+        items.append({"genre": "separateur"})
+        items.append({"genre": "maj", "texte": core.t("reglages_maj")})
         # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
         # disparait, au lieu de rester a repeter un etat.
         if not core.est_navigateur_par_defaut():
-            items.append({"genre": "separateur"})
             items.append({"genre": "defaut",
                           "texte": core.t("accueil_defaut")})
         return items
@@ -3951,7 +3952,7 @@ class Navigateur(Form):
             if survole:
                 ui.remplir_arrondi(g, ui.ONGLET_SURVOL, 4, y, largeur - 8,
                                    h, 7)
-            if genre == "defaut":
+            if genre in ("defaut", "maj"):
                 ui.remplir_arrondi(g, ui.ACCENT if survole else ui.CHAMP_FOND,
                                    14, y + 5, largeur - 28, h - 10, 9)
                 ui.centrer(g, item["texte"], self.police,
@@ -4047,6 +4048,9 @@ class Navigateur(Form):
         elif genre == "defaut":
             self.fermer_reglages()
             core.ouvrir_reglages_defaut()
+        elif genre == "maj":
+            self.fermer_reglages()
+            self.verifier_maj_maintenant()
 
     def _menu_de_choix(self, item, bas_de_ligne):
         """Deroule les valeurs possibles, avec le menu deja en place.
@@ -4914,7 +4918,19 @@ class Navigateur(Form):
             except Exception as e:
                 journal("cookies : %s" % e)
 
-    def guetter_mise_a_jour(self):
+    def verifier_maj_maintenant(self):
+        """Efface le controle du jour et verifie tout de suite.
+
+        Le bandeau s'affiche dans la page regardee : si ce n'est pas
+        l'accueil, on en ouvre un, pour ne pas le poser sur un site.
+        """
+        core.oublier_verification_maj()
+        if not self.actif or self.actif.url != ACCUEIL:
+            self.nouvel_onglet(ACCUEIL)
+        threading.Thread(target=self.guetter_mise_a_jour,
+                         kwargs={"bavard": True}, daemon=True).start()
+
+    def guetter_mise_a_jour(self, bavard=False):
         """Regarde, en fond, s'il existe une version plus recente.
 
         Sur un fil a part : une interrogation reseau au demarrage, meme
@@ -4925,12 +4941,22 @@ class Navigateur(Form):
         Le resultat revient par `Invoke` : le bandeau appartient a l'interface,
         et l'interface n'appartient qu'a son propre fil.
         """
+        rapport = {}
         try:
             manifeste = core.chercher_mise_a_jour(
-                core.CONFIG.get("manifeste_maj", ""))
+                core.CONFIG.get("manifeste_maj", ""), rapport=rapport)
         except Exception as e:
             return journal("recherche de mise a jour : %s" % e)
+        if bavard:
+            journal("verification demandee : %s" % rapport.get("etat"))
         if not manifeste:
+            # Au demarrage on se tait ; demande par le bouton, on repond.
+            if bavard:
+                cle = ("maj_a_jour" if rapport.get("etat") == "a_jour"
+                       else "maj_verification_echouee")
+                self._annoncer_des_que_possible(
+                    lambda: self.signaler(core.t(cle, core.VERSION),
+                                          erreur=(cle != "maj_a_jour")))
             return
         self._maj = manifeste
         texte = core.t("maj_disponible", manifeste["version"])
@@ -4950,6 +4976,35 @@ class Navigateur(Form):
             time.sleep(1.0)
         journal("mise a jour %s : aucune page prete pour l'annoncer"
                 % manifeste["version"])
+
+    def _annoncer_des_que_possible(self, geste):
+        """Fait `geste` des qu'une page est prete, sur le fil de la fenetre.
+
+        L'onglet d'accueil ouvert par le bouton met un instant a charger : un
+        bandeau pose avant n'aurait nulle part ou s'afficher.
+
+        La question « la page est-elle prete ? » se pose elle aussi sur le fil
+        de la fenetre : WebView2 refuse tout appel venu d'ailleurs. Posee
+        depuis ce fil-ci, elle levait une erreur, avalee, et le bandeau etait
+        abandonne sans un mot. Mesure faite sur l'executable.
+        """
+        for _ in range(20):
+            pret = []
+            try:
+                self.Invoke(Action(lambda: pret.append(
+                    self.actif is not None
+                    and self.actif.vue.CoreWebView2 is not None)))
+            except Exception:
+                pass
+            if pret and pret[0]:
+                time.sleep(0.8)           # le temps que la page soit dessinee
+                try:
+                    self.Invoke(Action(geste))
+                except Exception as e:
+                    journal("annonce differee : %r" % (e,))
+                return
+            time.sleep(0.5)
+        journal("annonce differee : aucune page prete")
 
     def installer_maj(self):
         """Telecharge, verifie, previent, puis installe. Sur un fil a part.

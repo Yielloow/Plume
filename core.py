@@ -121,16 +121,6 @@ FICHIER_ACCUEIL = APP_DIR / "profil" / "accueil.html"
 JOURNAL_MPV = APP_DIR / "profil" / "mpv.log"
 JOURNAL_LECTEUR = APP_DIR / "profil" / "lecteur.log"
 
-# Deno resout les defis JavaScript de YouTube. winget l'installe ici, mais ce
-# dossier n'est pas toujours dans le PATH des sous-processus.
-for _dossier in (APP_DIR / "outils-externes",
-                 Path(os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\WinGet\Links")),
-                 Path(os.path.expandvars(r"%USERPROFILE%\.denoin"))):
-    if (_dossier / "deno.exe").exists():
-        os.environ["PATH"] = str(_dossier) + os.pathsep + os.environ.get("PATH", "")
-        break
-
-
 def charger_config():
     cfg = dict(DEFAULT_CONFIG)
     if CONFIG_FILE.exists():
@@ -153,7 +143,10 @@ def _trouver(nom, chemins_probables):
         return trouve
     for c in chemins_probables:
         p = Path(os.path.expandvars(c))
-        if p.exists():
+        # os.path.isfile et non Path.exists : devant un raccourci que Windows
+        # refuse de laisser parcourir (WinError 448), Path.exists leve une
+        # erreur au lieu de repondre non, et Plume ne demarrait plus.
+        if os.path.isfile(str(p)):
             return str(p)
     return None
 
@@ -932,7 +925,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.11"
+VERSION = "1.0.12"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -967,6 +960,14 @@ def version_plus_recente(proposee, courante=None):
     return version_en_nombres(proposee) > version_en_nombres(courante)
 
 
+def oublier_verification_maj():
+    """Efface la date du dernier controle : le prochain aura lieu aussitot."""
+    try:
+        FICHIER_MAJ.unlink()
+    except OSError:
+        pass
+
+
 def lire_manifeste(texte):
     """Valide un manifeste de mise a jour, et renvoie None s'il ne va pas.
 
@@ -994,19 +995,27 @@ def lire_manifeste(texte):
             "notes": str(m.get("notes", ""))[:2000]}
 
 
-def chercher_mise_a_jour(url_manifeste, maintenant=None, lecteur=None):
+def chercher_mise_a_jour(url_manifeste, maintenant=None, lecteur=None,
+                         rapport=None):
     """Regarde s'il existe une version plus recente. Ne leve jamais.
+
+    `rapport`, un dictionnaire facultatif, recoit la raison sous la cle
+    « etat » : « neuf », « a_jour », « echec » ou « trop_tot ». Le bouton des
+    parametres en a besoin pour dire la verite ; le demarrage, lui, se tait.
 
     Renvoie le manifeste s'il y a du neuf, sinon None. La verification est
     freinee a une par jour, et son horodatage vit dans profil/maj.json : une
     panne de reseau ne doit pas la relancer a chaque ouverture d'onglet.
     """
+    rapport = {} if rapport is None else rapport
+    rapport["etat"] = "echec"
     if not url_manifeste:
         return None
     maintenant = time.time() if maintenant is None else maintenant
     try:
         vu = json.loads(FICHIER_MAJ.read_text(encoding="utf-8"))
         if maintenant - float(vu.get("verifie", 0)) < DELAI_VERIFICATION:
+            rapport["etat"] = "trop_tot"
             return None
     except Exception:
         pass
@@ -1029,7 +1038,11 @@ def chercher_mise_a_jour(url_manifeste, maintenant=None, lecteur=None):
     manifeste = lire_manifeste(texte)
     if manifeste is None:
         return None
-    return manifeste if version_plus_recente(manifeste["version"]) else None
+    if version_plus_recente(manifeste["version"]):
+        rapport["etat"] = "neuf"
+        return manifeste
+    rapport["etat"] = "a_jour"
+    return None
 
 
 # --------------------------------------------------------------------------

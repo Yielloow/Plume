@@ -111,6 +111,11 @@ TEXTES = {
                               "de Plume.",
         # --- mises a jour
         "maj_disponible": "Plume %s est disponible.",
+        "reglages_maj": "Vérifier les mises à jour",
+        "maj_a_jour": "Plume est à jour (version %s).",
+        "maj_verification_echouee": "La vérification des mises à jour a "
+                                    "échoué. Vérifiez la connexion, puis "
+                                    "réessayez (version actuelle : %s).",
         "maj_bouton": "Mettre à jour",
         "maj_telechargement": "Téléchargement de la mise à jour... %d %%",
         "maj_bientot": "Mise à jour dans %d secondes.",
@@ -209,6 +214,11 @@ TEXTES = {
         "lecture_essayer_site": "Play with the site's player",
         "lecture_echec_live": "The live stream failed in Plume's player.",
         "maj_disponible": "Plume %s is available.",
+        "reglages_maj": "Check for updates",
+        "maj_a_jour": "Plume is up to date (version %s).",
+        "maj_verification_echouee": "The update check failed. Check the "
+                                    "connection, then try again (current "
+                                    "version: %s).",
         "maj_bouton": "Update",
         "maj_telechargement": "Downloading the update... %d %%",
         "maj_bientot": "Updating in %d seconds.",
