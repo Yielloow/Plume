@@ -246,6 +246,26 @@ def lu_par_mpv(url):
     return any(h == s or h.endswith("." + s) for s in SITES_MPV)
 
 
+TWITCH_RESERVES = (
+    "directory", "videos", "settings", "following", "subscriptions", "u", "p",
+    "store", "subs", "drops", "downloads", "turbo", "friends", "wallet",
+    "prime", "search", "team", "jobs", "legal", "privacy", "security",
+    "login", "signup", "popout", "moderator", "payments", "inventory",
+    "clips")
+
+
+def est_chaine_twitch(url):
+    """Vrai sur la page d'une chaine Twitch, la ou un live se regarde.
+
+    Meme regle que `estPageVideo` dans le script de page : les chemins
+    reserves de Twitch (repertoire, reglages...) ne sont pas des chaines.
+    """
+    if not lu_par_mpv(url):
+        return False
+    morceaux = [m for m in (urlparse(url).path or "").split("/") if m]
+    return bool(morceaux) and morceaux[0].lower() not in TWITCH_RESERVES
+
+
 def est_live(url):
     h = _hote(url)
     return any(h == s or h.endswith("." + s) for s in SITES_LIVE)
@@ -925,7 +945,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.13"
+VERSION = "1.0.14"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une

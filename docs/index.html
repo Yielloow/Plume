@@ -1,248 +1,289 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Plume, a browser that plays video with mpv</title>
-<meta name="description" content="A light browser that replaces each site's video player with mpv: less memory, no ads, and the picture stays in the page.">
+<title>Plume, un navigateur léger pour Windows</title>
+<meta name="description" content="Un navigateur léger pour Windows : YouTube sans publicité, les lives Twitch sans pub si vous le voulez, des onglets qui s'endorment, et rien qui ne quitte votre machine.">
 <link rel="icon" href="plume.ico">
 <meta property="og:title" content="Plume">
-<meta property="og:description" content="A browser that plays video with mpv instead of the site's own player.">
+<meta property="og:description" content="Un navigateur léger pour Windows : YouTube sans publicité, les lives Twitch sans pub si vous le voulez, et rien qui ne quitte votre machine.">
+<meta property="og:image" content="gestionnaire-des-taches.png">
 <style>
+/* Les couleurs sont celles de l'application, reprises de interface.py : le
+   site doit ressembler a Plume, pas a une page qui parle de Plume. */
 :root {
-  --fond: #12131a;
-  --fond2: #1a1b26;
-  --bord: #2b2c3a;
+  --onglets: #1c1b22;
+  --nav: #2b2a33;
+  --page: #12131a;
+  --champ: #1c1b22;
+  --bord: #3a3944;
+  --survol: #35343f;
+  --onglet-actif: #40395c;
   --texte: #fbfbfe;
-  --texte2: #a39bbd;
+  --texte2: #b1b1bd;
+  --texte3: #7a7988;
   --accent: #7c5cff;
   --accent-pale: #a78bfa;
-  --avert-fond: #241d12;
-  --avert-bord: #5c4820;
+  --bleu: #a7c7ff; --vert: #a7e8be; --ambre: #f7cd96;
+  --rose: #f0b4cd; --violet: #cdbafa; --turquoise: #a3e0e6;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; scroll-padding-top: 96px; }
 body {
-  margin: 0;
-  background: var(--fond);
-  color: var(--texte);
-  font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+  margin: 0; background: var(--page); color: var(--texte);
+  font: 16px/1.6 "Segoe UI", -apple-system, system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
+a { color: var(--accent-pale); }
 
 /* --- L'intro, la meme que celle du navigateur au lancement --------------- */
 #intro {
-  position: fixed; inset: 0; z-index: 100;
-  width: 100%; height: 100%; display: block;
-  background: #12131a; cursor: pointer;
+  position: fixed; inset: 0; z-index: 100; width: 100%; height: 100%;
+  display: block; background: #12131a; cursor: pointer;
 }
 #intro.partie { opacity: 0; pointer-events: none; transition: opacity .28s; }
-/* La page arrive derriere la toile qui s'ecarte, elle ne la remplace pas. */
 #page { opacity: 0; transition: opacity .5s ease-out; }
 #page.visible { opacity: 1; }
 body.attend { overflow: hidden; }
 
-.enveloppe {
-  max-width: 780px; margin: 0 auto; padding: 0 24px 96px; position: relative;
+/* --- La fenetre de Plume : onglets et barre d'adresse ------------------- */
+.chrome { position: sticky; top: 0; z-index: 20; }
+.onglets {
+  display: flex; align-items: flex-end; gap: 2px; height: 40px;
+  padding: 0 8px; background: var(--onglets); overflow-x: auto;
+  scrollbar-width: none;
+}
+.onglets::-webkit-scrollbar { display: none; }
+.onglet {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  height: 32px; padding: 0 16px; min-width: 150px; max-width: 220px;
+  border-radius: 9px 9px 0 0; color: var(--texte2); font-size: 13px;
+  text-decoration: none; white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.onglet:hover { background: var(--survol); color: var(--texte); }
+.onglet.actif {
+  background: var(--onglet-actif); color: var(--texte);
+  box-shadow: inset 0 1.5px 0 var(--accent);
+}
+.onglet svg { flex: none; width: 12px; height: 12px; }
+.onglet .fermer { margin-left: auto; color: var(--texte3); font-size: 11px; }
+.plus { color: var(--texte3); padding: 0 12px 8px; font-size: 16px; }
+.boutons-fenetre {
+  margin-left: auto; display: flex; gap: 22px; padding: 0 12px 11px;
+  color: var(--texte3); font-size: 12px; flex: none;
 }
 
-header { padding: 84px 0 44px; }
-.logotype { display: flex; align-items: center; gap: 18px; margin-bottom: 18px; }
-.logotype svg { width: 46px; height: 46px; flex: none; }
-h1 {
-  font-size: 62px; margin: 0; letter-spacing: -2px; font-weight: 600;
-  line-height: 1;
+.nav {
+  display: flex; align-items: center; gap: 6px; height: 48px;
+  padding: 0 10px; background: var(--nav);
+  border-bottom: 1px solid #22212a;
 }
-h1 .point { color: var(--accent-pale); }
-.accroche {
-  font-size: 21px; color: var(--texte2); margin: 0 0 36px; max-width: 33em;
-  line-height: 1.5;
+.glyphe {
+  width: 30px; height: 28px; display: grid; place-items: center;
+  color: var(--texte2); border-radius: 8px; font-size: 14px;
 }
-h2 { font-size: 23px; margin: 56px 0 14px; letter-spacing: -0.4px; }
-h3 { font-size: 17px; margin: 26px 0 6px; }
-p { margin: 0 0 14px; }
-a { color: var(--accent-pale); }
+.adresse {
+  flex: 1; display: flex; align-items: center; gap: 10px; height: 30px;
+  margin: 0 6px; padding: 0 14px; border-radius: 999px;
+  background: var(--champ); color: var(--texte2); font-size: 13px;
+  overflow: hidden; white-space: nowrap;
+}
+.adresse svg { flex: none; }
+.adresse .etoile { margin-left: auto; color: var(--texte3); }
+.roue {
+  width: 34px; height: 30px; border: 0; border-radius: 8px; cursor: pointer;
+  display: grid; place-items: center; background: none; color: var(--texte2);
+}
+.roue:hover, .roue[aria-expanded="true"] { background: var(--survol); color: var(--texte); }
+.roue svg { width: 18px; height: 18px; }
 
-.bouton {
-  display: inline-flex; align-items: center; gap: 10px;
-  background: var(--accent); color: #fff; text-decoration: none;
-  padding: 15px 30px; border-radius: 11px; font-weight: 600; font-size: 17px;
-  box-shadow: 0 6px 30px -8px rgba(124, 92, 255, .8);
-  transition: transform .12s, box-shadow .2s, background .2s;
+/* Le panneau des parametres, celui de l'application, avec la langue dedans */
+.panneau {
+  position: absolute; right: 10px; top: 92px; width: 300px;
+  background: var(--nav); border: 1px solid var(--bord); border-radius: 12px;
+  padding: 8px; box-shadow: 0 18px 50px -12px rgba(0, 0, 0, .8);
+  opacity: 0; transform: translateY(-6px); pointer-events: none;
+  transition: opacity .16s, transform .16s;
 }
-.bouton:hover {
-  background: #8f74ff; transform: translateY(-1px);
-  box-shadow: 0 10px 38px -8px rgba(124, 92, 255, .95);
+.panneau.ouvert { opacity: 1; transform: none; pointer-events: auto; }
+.panneau .titre {
+  display: flex; align-items: center; gap: 10px; padding: 6px 10px 10px;
+  font-size: 13px;
 }
-.sous-bouton { color: var(--texte2); font-size: 14px; margin-top: 14px; }
+.ligne {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 8px; font-size: 13px;
+  color: var(--texte2);
+}
+.pastilles { display: flex; gap: 4px; }
+.pastilles button {
+  font: inherit; font-size: 11px; font-weight: 600; width: 38px; height: 24px;
+  border: 0; border-radius: 8px; cursor: pointer;
+  background: var(--champ); color: var(--texte3);
+}
+.pastilles button[aria-pressed="true"] { background: var(--accent); color: #fff; }
 
-/* --- Le relief, sans moteur 3D ----------------------------------------- */
+/* --- La page ------------------------------------------------------------ */
+main { max-width: 980px; margin: 0 auto; padding: 0 24px 80px; }
+section { padding-top: 72px; }
 
-/* Le halo derriere le titre respire, comme l'etincelle de l'intro respire
-   pendant que le navigateur se prepare. Meme periode, meme intention : dire
-   que quelque chose vit. */
-header { position: relative; }
+/* L'ouverture reprend la page d'accueil de Plume : le nom, le point violet,
+   et le champ en pilule, qui devient ici le bouton de telechargement. */
+.accueil {
+  min-height: calc(100vh - 88px); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center;
+  position: relative; padding-top: 0; overflow-x: clip;
+}
 .halo {
-  position: absolute; left: -80px; top: 10px; width: 380px; height: 380px;
-  pointer-events: none; z-index: -1;
-  background: radial-gradient(circle,
-              rgba(124, 92, 255, .30) 0%,
-              rgba(124, 92, 255, .10) 38%,
-              rgba(124, 92, 255, 0) 68%);
+  position: absolute; width: 520px; height: 520px; top: 50%; left: 50%;
+  margin: -330px 0 0 -260px; pointer-events: none; z-index: -1;
+  background: radial-gradient(circle, rgba(124, 92, 255, .26) 0%,
+              rgba(124, 92, 255, .08) 40%, rgba(124, 92, 255, 0) 68%);
   animation: respire 5.2s ease-in-out infinite;
 }
 @keyframes respire {
-  0%, 100% { transform: scale(1);    opacity: .75; }
-  50%      { transform: scale(1.14); opacity: 1; }
+  0%, 100% { transform: scale(1); opacity: .75; }
+  50% { transform: scale(1.12); opacity: 1; }
 }
-
-/* La parallaxe : quelques degres, pas plus. Au dela, l'etincelle se decolle
-   du titre et le logotype cesse d'etre un bloc. */
-.logotype svg {
-  transition: transform .25s cubic-bezier(.22, .61, .36, 1);
-  will-change: transform;
+.accueil h1 {
+  font-size: clamp(56px, 11vw, 104px); font-weight: 600; margin: 0;
+  letter-spacing: -3px; line-height: 1;
 }
-
-/* Les sections montent a l'approche. Elles sont visibles par defaut : si le
-   JavaScript ne tourne pas, rien ne disparait. */
-.monte { opacity: 1; transform: none; }
-.js .monte {
-  opacity: 0; transform: translateY(22px);
-  transition: opacity .6s ease-out, transform .6s cubic-bezier(.22, .61, .36, 1);
+.accueil h1 span { color: var(--accent-pale); }
+.accroche {
+  max-width: 34em; margin: 22px auto 34px; color: var(--texte2);
+  font-size: 19px; line-height: 1.55;
 }
-.js .monte.vu { opacity: 1; transform: none; }
+.telecharger {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: min(520px, 100%); height: 56px; border-radius: 999px;
+  background: var(--accent); color: #fff; text-decoration: none;
+  font-size: 17px; font-weight: 600;
+  box-shadow: 0 10px 40px -10px rgba(124, 92, 255, .9);
+  transition: transform .12s, box-shadow .2s, background .2s;
+}
+.telecharger:hover {
+  background: #8f74ff; transform: translateY(-1px);
+  box-shadow: 0 14px 46px -10px rgba(124, 92, 255, 1);
+}
+.sous { margin-top: 14px; color: var(--texte3); font-size: 13px; }
+/* Dans le flux, pas en bas de l'ecran : sur un ecran bas, place en
+   absolu, il chevauchait la ligne sous le bouton. */
+.defiler {
+  margin-top: 44px; color: var(--texte3); font-size: 12px;
+  text-decoration: none; letter-spacing: .08em; text-transform: uppercase;
+}
+.defiler:hover { color: var(--texte2); }
 
-/* La carte du navigateur : du vrai relief, en perspective CSS. Elle se
-   redresse au survol, ce qui donne le volume sans qu'aucune image ne soit
-   chargee : tout est dessine par le navigateur qui l'affiche. */
-.scene { perspective: 1400px; margin: 40px 0 8px; }
+.etiquette {
+  display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--accent-pale); margin-bottom: 10px;
+}
+h2 {
+  font-size: clamp(28px, 4.4vw, 40px); margin: 0 0 14px; letter-spacing: -1px;
+  line-height: 1.15; font-weight: 600;
+}
+.chapeau { color: var(--texte2); font-size: 17px; max-width: 42em; margin: 0 0 28px; }
+
+/* La capture, dans une fenetre aux couleurs de Plume */
+.capture {
+  position: relative; border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--bord); background: #1f1f1f;
+  box-shadow: 0 40px 90px -40px rgba(0, 0, 0, .95),
+              0 0 0 1px rgba(124, 92, 255, .14);
+}
+.capture img { display: block; width: 100%; height: auto; }
+/* La ligne de Plume, surlignee. Ses bornes sont mesurees sur la capture. */
+.capture .surligne {
+  position: absolute; left: 0; right: 0;
+  top: var(--haut, 85.4%); height: var(--hauteur, 11%);
+  border: 1.5px solid var(--accent-pale); border-radius: 6px;
+  box-shadow: 0 0 0 9999px rgba(18, 19, 26, .38),
+              0 0 24px rgba(167, 139, 250, .55);
+  pointer-events: none;
+}
+.chiffres {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;
+}
+.fiche {
+  background: var(--nav); border: 1px solid var(--bord); border-radius: 12px;
+  padding: 16px 18px;
+}
+.fiche.plume { border-color: rgba(167, 139, 250, .6); }
+.fiche .nom { display: flex; align-items: center; gap: 9px; font-weight: 600; }
+.fiche .ligne { padding: 8px 0 0; }
+.fiche .valeur { color: var(--texte); font-weight: 600; font-variant-numeric: tabular-nums; }
+.fiche.plume .valeur { color: var(--accent-pale); }
+.legende { color: var(--texte3); font-size: 13px; margin-top: 12px; }
+.suite { margin-top: 44px; }
+.suite h3 { font-size: 20px; margin: 0 0 8px; font-weight: 600; }
+.suite .chapeau { font-size: 15px; margin-bottom: 18px; }
+
+/* Les fonctions, en cartes comme les groupes de travail de l'accueil */
+.cartes {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
 .carte {
-  transform: rotateX(9deg) rotateY(-7deg) rotateZ(.6deg);
-  transform-style: preserve-3d;
-  transition: transform .5s cubic-bezier(.22, .61, .36, 1),
-              box-shadow .5s ease-out;
-  border-radius: 12px; overflow: hidden;
-  border: 1px solid var(--bord); background: #12131a;
-  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, .9),
-              0 0 0 1px rgba(124, 92, 255, .12);
+  background: var(--onglets); border: 1px solid var(--bord); border-radius: 14px;
+  padding: 20px 20px 18px; transition: border-color .2s, transform .2s;
 }
-.scene:hover .carte {
-  transform: rotateX(0deg) rotateY(0deg) rotateZ(0deg) translateY(-4px);
-  box-shadow: 0 40px 90px -34px rgba(0, 0, 0, .95),
-              0 0 0 1px rgba(124, 92, 255, .35);
+.carte:hover { border-color: var(--c); transform: translateY(-2px); }
+.carte .tete { display: flex; align-items: center; gap: 11px; margin-bottom: 8px; }
+.pastille {
+  width: 14px; height: 14px; border-radius: 50%; flex: none;
+  background: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent);
 }
-.carte .barre-onglets {
-  display: flex; gap: 4px; padding: 6px 8px 0; background: #1c1b22;
-}
-.carte .onglet {
-  font-size: 11px; color: #8f8f9e; padding: 7px 14px 8px;
-  border-radius: 8px 8px 0 0; white-space: nowrap;
-}
-.carte .onglet.actif {
-  color: #fbfbfe; background: #40395c;
-  box-shadow: inset 0 1px 0 #7c5cff, inset 1px 0 0 #7c5cff,
-              inset -1px 0 0 #7c5cff;
-}
-.carte .barre-adresse {
-  display: flex; align-items: center; gap: 8px;
-  padding: 8px 10px; background: #2b2a33;
-}
-.carte .pilule {
-  flex: 1; font-size: 11px; color: #a39bbd; background: #1c1b22;
-  border-radius: 999px; padding: 5px 12px;
-}
-.carte .video {
-  position: relative; aspect-ratio: 16 / 9;
-  background: linear-gradient(150deg, #241f3d 0%, #14131c 60%, #1d1830 100%);
-}
-.carte .lecteur {
-  position: absolute; left: 0; right: 0; bottom: 0;
-  padding: 10px 12px 12px;
-  background: linear-gradient(transparent, rgba(0, 0, 0, .75));
-}
-.carte .curseur { height: 3px; border-radius: 2px; background: #3a3944; }
-.carte .curseur i {
-  display: block; height: 100%; width: 38%; border-radius: 2px;
-  background: #a78bfa; box-shadow: 0 0 10px rgba(167, 139, 250, .9);
-}
-.carte .duree {
-  margin-top: 8px; font-size: 10px; color: #c9c3dd;
-  display: flex; justify-content: space-between;
-}
-.legende {
-  text-align: center; color: var(--texte2); font-size: 13px; margin: 0 0 8px;
-}
+.carte h3 { margin: 0; font-size: 17px; font-weight: 600; }
+.carte p { margin: 0; color: var(--texte2); font-size: 15px; }
 
-@media (prefers-reduced-motion: reduce) {
-  .halo { animation: none; }
-  .carte, .scene:hover .carte { transition: none; transform: none; }
-  .logotype svg { transition: none; }
-  .js .monte { opacity: 1; transform: none; transition: none; }
+/* L'avertissement de Windows, en bandeau comme ceux de l'application */
+.bandeau {
+  background: #241d12; border: 1px solid #5c4820; border-radius: 14px;
+  padding: 24px 26px;
 }
-@media (max-width: 560px) {
-  .halo { width: 250px; height: 250px; left: -50px; }
-  .carte { transform: none; }
-}
-
-/* Le choix de langue : discret, en haut a droite, hors du chemin de lecture. */
-.langues {
-  position: absolute; top: 26px; right: 24px; display: flex; gap: 2px;
-  font-size: 13px;
-}
-.langues button {
-  background: none; border: 1px solid transparent; color: var(--texte2);
-  padding: 5px 10px; border-radius: 7px; cursor: pointer; font: inherit;
-}
-.langues button:hover { color: var(--texte); }
-.langues button[aria-pressed="true"] {
-  color: var(--texte); border-color: var(--bord); background: var(--fond2);
-}
-
-code, .empreinte {
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 13px;
-}
-code { color: var(--accent-pale); }
+.bandeau h3 { margin: 20px 0 4px; font-size: 16px; }
+.bandeau p { margin: 0 0 12px; color: #e4d9c4; }
 .empreinte {
-  display: block; background: var(--fond2); border: 1px solid var(--bord);
-  border-radius: 9px; padding: 13px 15px; overflow-x: auto;
-  color: var(--texte2); white-space: pre; line-height: 1.7;
+  display: block; background: #1a150d; border: 1px solid #4a3a1b;
+  border-radius: 10px; padding: 12px 14px; overflow-x: auto; white-space: pre;
+  color: #d8c9a8; font: 13px/1.7 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  margin: 8px 0 14px;
 }
-.avertissement {
-  background: var(--avert-fond); border: 1px solid var(--avert-bord);
-  border-radius: 12px; padding: 20px 24px; margin: 32px 0;
-}
-.avertissement h2 { margin-top: 0; font-size: 20px; }
 
-.traits { list-style: none; padding: 0; margin: 0; }
-.traits li { border-top: 1px solid var(--bord); padding: 16px 0; }
-.traits b { display: block; font-weight: 600; margin-bottom: 2px; }
-.traits span { color: var(--texte2); }
+.prive {
+  display: flex; gap: 18px; align-items: flex-start;
+  background: var(--onglets); border: 1px solid var(--bord); border-radius: 14px;
+  padding: 22px 24px;
+}
+.prive svg { flex: none; margin-top: 4px; }
+.prive p { margin: 0; color: var(--texte2); }
 
 footer {
-  border-top: 1px solid var(--bord); margin-top: 72px; padding-top: 26px;
-  color: var(--texte2); font-size: 14px;
+  max-width: 980px; margin: 0 auto; padding: 26px 24px 40px;
+  border-top: 1px solid var(--bord); color: var(--texte3); font-size: 13px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    --fond: #fcfbff; --fond2: #f2effa; --bord: #e0daf0;
-    --texte: #16121f; --texte2: #5b5273;
-    --accent: #6c4fc0; --accent-pale: #553a9e;
-    --avert-fond: #fdf7e6; --avert-bord: #e3cf99;
-  }
-  /* L'intro garde son fond sombre : c'est celui du navigateur, et un
-     logotype pale sur fond clair ne serait plus le meme objet. */
-}
-@media (max-width: 560px) {
-  h1 { font-size: 46px; }
-  .accroche { font-size: 18px; }
-  header { padding: 72px 0 32px; }
-  .langues { top: 16px; right: 16px; }
+/* Les sections montent a l'approche ; visibles sans JavaScript. */
+.js .monte { opacity: 0; transform: translateY(22px);
+  transition: opacity .6s ease-out, transform .6s cubic-bezier(.22, .61, .36, 1); }
+.js .monte.vu { opacity: 1; transform: none; }
+
+@media (max-width: 640px) {
+  .boutons-fenetre, .glyphe.secondaire { display: none; }
+  .onglet { min-width: 120px; }
+  .chiffres { grid-template-columns: 1fr; }
+  .panneau { right: 8px; left: 8px; width: auto; }
+  section { padding-top: 56px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  #page { transition: none; }
+  .halo { animation: none; }
+  #page, .panneau, .carte { transition: none; }
+  .js .monte { opacity: 1; transform: none; transition: none; }
 }
 </style>
 </head>
@@ -251,104 +292,260 @@ footer {
 <canvas id="intro" aria-hidden="true"></canvas>
 
 <div id="page">
-<div class="enveloppe">
 
-<nav class="langues" aria-label="Language">
-  <button type="button" data-langue="en" aria-pressed="true">EN</button>
-  <button type="button" data-langue="fr" aria-pressed="false">FR</button>
-</nav>
-
-<header>
-  <div class="halo" aria-hidden="true"></div>
-  <div class="logotype">
-    <!-- L'etoile a quatre branches de l'icone, cotes concaves. -->
-    <svg viewBox="-1 -1 2 2" aria-hidden="true">
-      <path fill="#a78bfa"
-            d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/>
-    </svg>
-    <h1>Plume<span class="point">.</span></h1>
+<!-- La fenetre de Plume. Ses onglets menent aux sections de la page. -->
+<div class="chrome">
+  <nav class="onglets" aria-label="Sections">
+    <a class="onglet actif" href="#accueil" data-section="accueil">
+      <svg viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>
+      <span data-t="o-accueil"></span><span class="fermer">✕</span></a>
+    <a class="onglet" href="#preuve" data-section="preuve"><span data-t="o-preuve"></span><span class="fermer">✕</span></a>
+    <a class="onglet" href="#fonctions" data-section="fonctions"><span data-t="o-fonctions"></span><span class="fermer">✕</span></a>
+    <a class="onglet" href="#installer" data-section="installer"><span data-t="o-installer"></span><span class="fermer">✕</span></a>
+    <span class="plus" aria-hidden="true">+</span>
+    <span class="boutons-fenetre" aria-hidden="true"><span>─</span><span>▢</span><span>✕</span></span>
+  </nav>
+  <div class="nav">
+    <span class="glyphe" aria-hidden="true">←</span>
+    <span class="glyphe secondaire" aria-hidden="true">→</span>
+    <span class="glyphe secondaire" aria-hidden="true">↻</span>
+    <span class="glyphe secondaire" aria-hidden="true">⌂</span>
+    <div class="adresse">
+      <svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true"><rect x="1" y="5" width="8" height="7" rx="1.5" fill="#b1b1bd"/><path d="M3 5V3.5a2 2 0 0 1 4 0V5" stroke="#b1b1bd" stroke-width="1.4" fill="none"/></svg>
+      <span>yielloow.github.io/Plume</span>
+      <span class="etoile" aria-hidden="true">☆</span>
+    </div>
+    <button class="roue" type="button" aria-expanded="false" aria-controls="panneau" data-t-aria="parametres">
+      <svg viewBox="-10 -10 20 20" aria-hidden="true"><path id="dent" fill="currentColor" fill-rule="evenodd" d=""/></svg>
+    </button>
   </div>
-  <p class="accroche" data-t="accroche"></p>
-  <a class="bouton" id="lien-telechargement" data-t="telecharger"
-     href="https://github.com/Yielloow/Plume/releases/latest"></a>
-  <p class="sous-bouton"><span data-t="exigences"></span>
-  <span id="taille"></span> <span data-t="rien-installer"></span></p>
-</header>
+  <div class="panneau" id="panneau" role="dialog" aria-labelledby="panneau-titre">
+    <div class="titre">
+      <svg width="14" height="14" viewBox="-10 -10 20 20" aria-hidden="true"><path class="dent" fill="#a78bfa" fill-rule="evenodd" d=""/></svg>
+      <span id="panneau-titre" data-t="parametres"></span>
+    </div>
+    <div class="ligne"><span data-t="langue"></span>
+      <span class="pastilles">
+        <button type="button" data-langue="fr" aria-pressed="false">FR</button>
+        <button type="button" data-langue="en" aria-pressed="false">EN</button>
+      </span></div>
+  </div>
+</div>
 
-<div class="scene" aria-hidden="true">
-  <div class="carte">
-    <div class="barre-onglets">
-      <div class="onglet actif">YouTube</div>
-      <div class="onglet">Twitch</div>
-      <div class="onglet">+</div>
+<main>
+
+<section class="accueil" id="accueil">
+  <div class="halo" aria-hidden="true"></div>
+  <h1>Plume<span>.</span></h1>
+  <p class="accroche" data-t="accroche"></p>
+  <a class="telecharger" id="lien-telechargement" href="https://github.com/Yielloow/Plume/releases/latest">
+    <svg width="18" height="18" viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#fff" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>
+    <span data-t="telecharger"></span></a>
+  <p class="sous"><span data-t="exigences"></span> <span id="taille"></span> <span data-t="rien-installer"></span></p>
+  <a class="defiler" href="#preuve" data-t="defiler"></a>
+</section>
+
+<section id="preuve" class="monte">
+  <span class="etiquette" data-t="preuve-etiquette"></span>
+  <h2 data-t="preuve-titre"></h2>
+  <p class="chapeau" data-t="preuve-texte"></p>
+  <div class="capture">
+    <img src="gestionnaire-des-taches.png" width="774" height="266"
+         data-t-alt="capture-alt" alt="">
+    <div class="surligne" aria-hidden="true"></div>
+  </div>
+  <div class="chiffres">
+    <div class="fiche plume">
+      <div class="nom"><svg width="13" height="13" viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>Plume.exe</div>
+      <div class="ligne"><span data-t="processeur"></span><span class="valeur">0,5 %</span></div>
+      <div class="ligne"><span data-t="memoire"></span><span class="valeur">118,9 Mo</span></div>
     </div>
-    <div class="barre-adresse">
-      <svg width="13" height="13" viewBox="-1 -1 2 2">
-        <path fill="#a78bfa"
-              d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/>
-      </svg>
-      <div class="pilule">youtube.com/watch</div>
+    <div class="fiche">
+      <div class="nom">Brave Browser</div>
+      <div class="ligne"><span data-t="processeur"></span><span class="valeur">30,7 %</span></div>
+      <div class="ligne"><span data-t="memoire"></span><span class="valeur">708,6 Mo</span></div>
     </div>
-    <div class="video">
-      <div class="lecteur">
-        <div class="curseur"><i></i></div>
-        <div class="duree"><span>12:04</span><span>31:47</span></div>
+  </div>
+  <p class="legende" data-t="preuve-legende"></p>
+
+  <div class="suite">
+    <h3 data-t="moteur-titre"></h3>
+    <p class="chapeau" data-t="moteur-texte"></p>
+    <div class="capture">
+      <img src="gestionnaire-webview2.png" width="912" height="139"
+           data-t-alt="moteur-alt" alt="">
+      <div class="surligne" style="--haut: 79.5%; --hauteur: 20%" aria-hidden="true"></div>
+    </div>
+    <div class="chiffres">
+      <div class="fiche plume">
+        <div class="nom"><svg width="13" height="13" viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg><span data-t="moteur-nom"></span></div>
+        <div class="ligne"><span data-t="processeur"></span><span class="valeur">0 %</span></div>
+        <div class="ligne"><span data-t="memoire"></span><span class="valeur">275,5 Mo</span></div>
+      </div>
+      <div class="fiche">
+        <div class="nom">Brave Browser</div>
+        <div class="ligne"><span data-t="processeur"></span><span class="valeur">7,6 %</span></div>
+        <div class="ligne"><span data-t="memoire"></span><span class="valeur">4 403,0 Mo</span></div>
       </div>
     </div>
   </div>
-</div>
-<p class="legende" data-t="legende"></p>
+</section>
 
-<div class="avertissement monte">
+<section id="fonctions" class="monte">
+  <span class="etiquette" data-t="fonctions-etiquette"></span>
+  <h2 data-t="fonctions-titre"></h2>
+  <div class="cartes">
+    <div class="carte" style="--c: var(--rose)"><div class="tete"><span class="pastille"></span><h3 data-t="f1"></h3></div><p data-t="f1d"></p></div>
+    <div class="carte" style="--c: var(--violet)"><div class="tete"><span class="pastille"></span><h3 data-t="f2"></h3></div><p data-t="f2d"></p></div>
+    <div class="carte" style="--c: var(--bleu)"><div class="tete"><span class="pastille"></span><h3 data-t="f3"></h3></div><p data-t="f3d"></p></div>
+    <div class="carte" style="--c: var(--vert)"><div class="tete"><span class="pastille"></span><h3 data-t="f4"></h3></div><p data-t="f4d"></p></div>
+    <div class="carte" style="--c: var(--ambre)"><div class="tete"><span class="pastille"></span><h3 data-t="f5"></h3></div><p data-t="f5d"></p></div>
+    <div class="carte" style="--c: var(--turquoise)"><div class="tete"><span class="pastille"></span><h3 data-t="f6"></h3></div><p data-t="f6d"></p></div>
+  </div>
+</section>
+
+<section id="installer" class="monte">
+  <span class="etiquette" data-t="installer-etiquette"></span>
   <h2 data-t="avert-titre"></h2>
-  <p data-t="avert-intro"></p>
+  <div class="bandeau">
+    <p data-t="avert-intro"></p>
+    <h3 data-t="avert-bleu-titre"></h3>
+    <p data-t="avert-bleu"></p>
+    <h3 data-t="avert-rouge-titre"></h3>
+    <p data-t="avert-rouge"></p>
+    <p data-t="avert-verifier"></p>
+    <code class="empreinte" id="empreinte"></code>
+    <p data-t="avert-conclusion"></p>
+    <p data-t="avert-exclusion"></p>
+  </div>
+</section>
 
-  <h3 data-t="avert-bleu-titre"></h3>
-  <p data-t="avert-bleu"></p>
+<section class="monte">
+  <div class="prive">
+    <svg width="22" height="26" viewBox="0 0 10 12" aria-hidden="true"><rect x="1" y="5" width="8" height="7" rx="1.5" fill="#a78bfa"/><path d="M3 5V3.5a2 2 0 0 1 4 0V5" stroke="#a78bfa" stroke-width="1.4" fill="none"/></svg>
+    <div><h3 style="margin:0 0 6px" data-t="prive-titre"></h3><p data-t="prive"></p></div>
+  </div>
+</section>
 
-  <h3 data-t="avert-rouge-titre"></h3>
-  <p data-t="avert-rouge"></p>
-  <p data-t="avert-verifier"></p>
-  <code class="empreinte" id="empreinte"></code>
-  <p data-t="avert-conclusion"></p>
-  <p data-t="avert-exclusion"></p>
-</div>
+</main>
 
-<h2 data-t="traits-titre" class="monte"></h2>
-<ul class="traits monte">
-  <li><b data-t="t1"></b><span data-t="t1d"></span></li>
-  <li><b data-t="t2"></b><span data-t="t2d"></span></li>
-  <li><b data-t="t3"></b><span data-t="t3d"></span></li>
-  <li><b data-t="t4"></b><span data-t="t4d"></span></li>
-  <li><b data-t="t5"></b><span data-t="t5d"></span></li>
-  <li><b data-t="t6"></b><span data-t="t6d"></span></li>
-</ul>
+<footer><span data-t="pied"></span> <span id="version"></span></footer>
 
-<h2 data-t="vie-privee-titre" class="monte"></h2>
-<p data-t="vie-privee" class="monte"></p>
-
-<footer>
-  <p><span data-t="pied"></span> <span id="version"></span></p>
-</footer>
-
-</div>
 </div>
 
 <script src="intro.js"></script>
 <script>
+// --- La roue dentee, la meme que dans la barre de Plume -------------------
+// Sept dents, un trou au centre : trace a la main, comme dans l'application.
+(function () {
+  var dents = 7, r = 9, creux = r * 0.74, periode = 2 * Math.PI / dents;
+  var sommet = periode * 0.30, fond = periode * 0.34;
+  var flanc = (periode - sommet - fond) / 2, pts = [];
+  for (var i = 0; i < dents; i++) {
+    var a = -Math.PI / 2 + i * periode;
+    [[a, r], [a + sommet, r], [a + sommet + flanc, creux],
+     [a + sommet + flanc + fond, creux]].forEach(function (p) {
+      pts.push((Math.cos(p[0]) * p[1]).toFixed(2) + "," + (Math.sin(p[0]) * p[1]).toFixed(2));
+    });
+  }
+  var t = r * 0.36;
+  var d = "M" + pts.join(" L") + " Z M" + t + ",0 A" + t + "," + t + " 0 1,0 -" + t
+        + ",0 A" + t + "," + t + " 0 1,0 " + t + ",0 Z";
+  var chemins = document.querySelectorAll("#dent, .dent");
+  for (var j = 0; j < chemins.length; j++) { chemins[j].setAttribute("d", d); }
+})();
+
 // --- Les deux langues -----------------------------------------------------
-// L'anglais par defaut, le francais si le navigateur est en francais. Le choix
-// manuel l'emporte sur la detection et tient le temps de la session : quelqu'un
-// dont le navigateur est en anglais mais qui prefere lire en francais ne doit
-// pas avoir a le redemander a chaque page.
+// Le francais pour un navigateur en francais, l'anglais sinon. Le choix fait
+// dans le panneau l'emporte, le temps de la session.
 var TEXTES = {
+  fr: {
+    titre: "Plume, un navigateur léger pour Windows",
+    "o-accueil": "Plume", "o-preuve": "Sur le vif", "o-fonctions": "Fonctions",
+    "o-installer": "Installer",
+    parametres: "Paramètres", langue: "Langue",
+    accroche: "Un navigateur léger pour Windows. YouTube sans publicité, les lives Twitch sans coupure pub si vous le voulez, des onglets qui s'endorment quand vous ne les regardez pas, et rien qui ne quitte votre machine.",
+    telecharger: "Télécharger pour Windows",
+    exigences: "Windows 10 (1809) ou 11 ·",
+    "rien-installer": "rien d'autre à installer",
+    defiler: "Voir en vrai",
+    "preuve-etiquette": "Pris sur le vif",
+    "preuve-titre": "Un live Twitch, et presque rien au compteur.",
+    "preuve-texte": "Le Gestionnaire des tâches d'une amie, pendant qu'elle suivait un live Twitch dans Plume.",
+    "capture-alt": "Gestionnaire des tâches : Brave Browser à 30,7 % de processeur et 708,6 Mo, Plume.exe à 0,5 % et 118,9 Mo pendant un live Twitch.",
+    processeur: "Processeur", memoire: "Mémoire",
+    "preuve-legende": "Chiffres lus sur la capture, ligne par ligne.",
+    "moteur-titre": "Et son moteur, compté à part.",
+    "moteur-texte": "Plume s'appuie sur WebView2, le moteur web de Windows, que le Gestionnaire des tâches range sur sa propre ligne. Le voici sur une autre capture, à côté de Brave.",
+    "moteur-alt": "Gestionnaire des tâches : Brave Browser à 7,6 % de processeur et 4 403,0 Mo, Gestionnaire WebView2 à 0 % et 275,5 Mo.",
+    "moteur-nom": "Gestionnaire WebView2",
+    "fonctions-etiquette": "Ce que Plume fait",
+    "fonctions-titre": "Le nécessaire, et rien qui pèse.",
+    f1: "YouTube sans publicité",
+    f1d: "Les publicités sont retirées avant même que le lecteur ne les voie. Le lecteur reste celui de YouTube, plein écran compris.",
+    f2: "Twitch, à votre choix",
+    f2d: "Par défaut, le lecteur de Twitch, léger pour la carte graphique. Ou celui de Plume, qui saute les coupures pub mais demande plus au GPU. Un bouton dans la barre d'adresse passe de l'un à l'autre.",
+    f3: "Des onglets qui s'endorment",
+    f3d: "Ceux que vous ne regardez pas rendent leur mémoire. Y revenir les retrouve intacts.",
+    f4: "Des groupes de travail",
+    f4d: "Clic droit sur un onglet pour le ranger. Un clic sur l'accueil rouvre tout le groupe, avec les icônes de ses pages.",
+    f5: "Mises à jour en un clic",
+    f5d: "Plume se met à jour toute seule, avec un compte à rebours que vous pouvez annuler. Ou tout de suite, depuis les paramètres.",
+    f6: "Une fenêtre privée",
+    f6d: "Ni historique, ni cookies, ni onglets gardés. À la fermeture, tout part.",
+    "installer-etiquette": "Installer",
+    "avert-titre": "Windows va se plaindre. C'est normal, et voici pourquoi.",
+    "avert-intro": "Plume n'est signée par aucun certificat. Un certificat de signature coûte plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.",
+    "avert-bleu-titre": "Fenêtre bleue, « Windows a protégé votre ordinateur »",
+    "avert-bleu": "C'est un avertissement de réputation, pas une détection. Cliquez sur Informations complémentaires, puis Exécuter quand même.",
+    "avert-rouge-titre": "Alerte rouge parlant d'un cheval de Troie",
+    "avert-rouge": "Souvent nommé Wacatac ou Bearfoos, avec !ml à la fin. C'est un faux positif connu des programmes Python compilés, et le !ml signifie justement que le verdict vient d'une heuristique et non d'une signature.",
+    "avert-verifier": "Ne passez pas outre sur parole. Vérifiez que le fichier reçu est bien celui qui a été publié, en comparant son empreinte à celle-ci :",
+    "avert-conclusion": "Si elle correspond, le fichier n'a pas été altéré en chemin. Sinon, ne lancez rien.",
+    "avert-exclusion": "N'ajoutez pas d'exclusion antivirus permanente pour faire taire l'alerte : on prend vite l'habitude de désactiver des protections, et c'est le réflexe qu'il vaut mieux ne pas acquérir.",
+    "prive-titre": "Rien ne quitte votre machine",
+    prive: "Plume n'a ni serveur, ni compte, ni synchronisation. Historique, favoris et cookies sont des fichiers dans le dossier profil, sur votre disque ; les supprimer suffit à tout oublier. La seule requête que Plume fait d'elle-même est une vérification de version, une fois par jour ou quand vous la demandez.",
+    pied: "Plume est un projet personnel, distribué tel quel, sans garantie.",
+    version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
+    taille: function (mo) { return mo + " Mo ·"; },
+    taille_defaut: "environ 70 Mo ·"
+  },
   en: {
-    titre: "Plume, a browser that plays video with mpv",
-    accroche: "A browser that plays video with mpv instead of the site's own player: less memory, no ads, and the picture stays right where it was in the page.",
+    titre: "Plume, a light browser for Windows",
+    "o-accueil": "Plume", "o-preuve": "In real life", "o-fonctions": "Features",
+    "o-installer": "Install",
+    parametres: "Settings", langue: "Language",
+    accroche: "A light browser for Windows. YouTube without ads, Twitch lives without ad breaks if you want, tabs that go to sleep when you are not looking at them, and nothing that leaves your machine.",
     telecharger: "Download for Windows",
     exigences: "Windows 10 (1809) or 11 ·",
     "rien-installer": "nothing else to install",
-    "avert-titre": "Windows will complain. That is expected, and here is why",
+    defiler: "See it for real",
+    "preuve-etiquette": "Caught in the act",
+    "preuve-titre": "A Twitch live, and almost nothing on the meter.",
+    "preuve-texte": "A friend's Task Manager, while she was watching a Twitch live in Plume.",
+    "capture-alt": "Task Manager: Brave Browser at 30.7% CPU and 708.6 MB, Plume.exe at 0.5% and 118.9 MB during a Twitch live.",
+    processeur: "CPU", memoire: "Memory",
+    "preuve-legende": "Figures read off the screenshot, line by line.",
+    "moteur-titre": "And its engine, counted separately.",
+    "moteur-texte": "Plume runs on WebView2, the Windows web engine, which Task Manager lists on its own line. Here it is on another screenshot, next to Brave.",
+    "moteur-alt": "Task Manager: Brave Browser at 7.6% CPU and 4,403.0 MB, WebView2 Manager at 0% and 275.5 MB.",
+    "moteur-nom": "WebView2 Manager",
+    "fonctions-etiquette": "What Plume does",
+    "fonctions-titre": "What you need, and nothing heavy.",
+    f1: "YouTube without ads",
+    f1d: "Ads are removed before the player even sees them. The player stays YouTube's own, full screen included.",
+    f2: "Twitch, your choice",
+    f2d: "By default, Twitch's own player, light on the graphics card. Or Plume's player, which skips ad breaks but asks more of the GPU. A button in the address bar switches between them.",
+    f3: "Tabs that go to sleep",
+    f3d: "The ones you are not looking at give their memory back. Coming back finds them intact.",
+    f4: "Work groups",
+    f4d: "Right-click a tab to file it. One click on the home page reopens the whole group, with its pages' icons.",
+    f5: "One-click updates",
+    f5d: "Plume updates itself, with a countdown you can cancel. Or right away, from the settings.",
+    f6: "A private window",
+    f6d: "No history, no cookies, no tabs kept. When it closes, everything goes.",
+    "installer-etiquette": "Install",
+    "avert-titre": "Windows will complain. That is expected, and here is why.",
     "avert-intro": "Plume is not signed by any certificate. A code signing certificate costs several hundred euros a year, and Plume is a free project made for a handful of people. So Windows does not know its publisher, and says so.",
     "avert-bleu-titre": "Blue window, “Windows protected your PC”",
     "avert-bleu": "That is a reputation warning, not a detection. Click More info, then Run anyway.",
@@ -357,67 +554,17 @@ var TEXTES = {
     "avert-verifier": "Do not take our word for it. First check that the file you received is the one that was published, by comparing its hash with this one:",
     "avert-conclusion": "If it matches, the file was not altered on the way. If it does not, run nothing.",
     "avert-exclusion": "Do not add a permanent antivirus exclusion to silence the alert: turning protections off is a habit that forms quickly, and it is the wrong one to pick up.",
-    "traits-titre": "What Plume does",
-    t1: "mpv instead of the site's player",
-    t1d: "The picture stays exactly where it was in the page, but mpv does the decoding: far less memory, and no video ads.",
-    t2: "Your videos resume where you left them",
-    t2d: "Close in the middle of a video: when you reopen it, it starts again at the right place, without asking.",
-    t3: "Tabs you are not watching go to sleep",
-    t3d: "They give their memory back, and coming back to one finds it intact, half-filled form included.",
-    t4: "Work groups",
-    t4d: "Right-click a tab to file it into a group; one click on the home page reopens the whole group.",
-    t5: "A private window",
-    t5d: "No history, no cookies, no tabs kept. When it closes, everything goes.",
-    t6: "Everything is included",
-    t6d: "Python, mpv, Deno and yt-dlp are in the package. The only prerequisite, shipped with Windows 11: the WebView2 runtime.",
-    "vie-privee-titre": "Privacy",
-    "vie-privee": "Plume sends nothing anywhere. History, bookmarks, cookies and playback positions are files in the profil/ subfolder, on your own machine; deleting them is enough to forget everything. The only request Plume makes on its own is a version check, once a day, to this page, and it stops entirely if you empty manifeste_maj in config.json.",
-    legende: "The picture stays in the page. mpv does the decoding.",
+    "prive-titre": "Nothing leaves your machine",
+    prive: "Plume has no server, no account, no sync. History, bookmarks and cookies are files in the profil folder, on your own disk; deleting them is enough to forget everything. The only request Plume makes on its own is a version check, once a day or when you ask for it.",
     pied: "Plume is a personal project, distributed as is, without warranty.",
     version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
     taille: function (mo) { return mo + " MB ·"; },
-    taille_defaut: "about 120 MB ·"
-  },
-  fr: {
-    titre: "Plume, un navigateur qui joue les vidéos avec mpv",
-    accroche: "Un navigateur qui joue les vidéos avec mpv au lieu du lecteur du site : moins de mémoire, pas de publicité, et l'image reste là où elle était dans la page.",
-    telecharger: "Télécharger pour Windows",
-    exigences: "Windows 10 (1809) ou 11 ·",
-    "rien-installer": "rien à installer en plus",
-    "avert-titre": "Windows va se plaindre. C'est normal, et voici pourquoi",
-    "avert-intro": "Plume n'est signée par aucun certificat. Un certificat de signature coûte plusieurs centaines d'euros par an, et Plume est un projet gratuit fait pour quelques personnes. Windows ne connaît donc pas son éditeur, et le dit.",
-    "avert-bleu-titre": "Fenêtre bleue, « Windows a protégé votre ordinateur »",
-    "avert-bleu": "C'est un avertissement de réputation, pas une détection. Cliquer sur Informations complémentaires, puis Exécuter quand même.",
-    "avert-rouge-titre": "Alerte rouge parlant d'un cheval de Troie",
-    "avert-rouge": "Souvent nommé Wacatac ou Bearfoos, avec !ml à la fin. C'est un faux positif connu des programmes Python compilés, et le !ml signifie justement que le verdict vient d'une heuristique et non d'une signature.",
-    "avert-verifier": "Ne passez pas outre sur parole. Vérifiez que le fichier reçu est bien celui qui a été publié, en comparant son empreinte à celle-ci :",
-    "avert-conclusion": "Si elle correspond, le fichier n'a pas été altéré en chemin. Sinon, ne lancez rien.",
-    "avert-exclusion": "N'ajoutez pas d'exclusion antivirus permanente pour faire taire l'alerte : on prend vite l'habitude de désactiver des protections, et c'est le réflexe qu'il vaut mieux ne pas acquérir.",
-    "traits-titre": "Ce que Plume fait",
-    t1: "mpv à la place du lecteur du site",
-    t1d: "L'image reste exactement où elle était dans la page, mais c'est mpv qui décode : nettement moins de mémoire, et aucune publicité vidéo.",
-    t2: "Vos vidéos reprennent où vous les avez laissées",
-    t2d: "Fermez au milieu d'une vidéo : en rouvrant, elle repart au bon endroit, sans rien vous demander.",
-    t3: "Les onglets que vous ne regardez pas se mettent en veille",
-    t3d: "Ils rendent la mémoire, et y revenir les retrouve intacts, formulaire à moitié rempli compris.",
-    t4: "Des groupes de travail",
-    t4d: "Clic droit sur un onglet pour le ranger dans un groupe ; un clic sur la page d'accueil rouvre tout le groupe.",
-    t5: "Une fenêtre privée",
-    t5d: "Ni historique, ni cookies, ni onglets gardés. À la fermeture, tout part.",
-    t6: "Tout est inclus",
-    t6d: "Python, mpv, Deno et yt-dlp sont dans le paquet. Seul prérequis, présent d'origine sur Windows 11 : le runtime WebView2.",
-    "vie-privee-titre": "Vie privée",
-    "vie-privee": "Plume ne renvoie rien nulle part. L'historique, les favoris, les cookies et les positions de lecture sont des fichiers dans le sous-dossier profil/, sur votre machine ; les supprimer suffit à tout oublier. La seule requête que Plume émet d'elle-même est une vérification de version, une fois par jour, vers cette page, et elle se coupe en vidant manifeste_maj dans config.json.",
-    legende: "L'image reste dans la page. C'est mpv qui la décode.",
-    pied: "Plume est un projet personnel, distribué tel quel, sans garantie.",
-    version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
-    taille: function (mo) { return mo + " Mo ·"; },
-    taille_defaut: "environ 120 Mo ·"
+    taille_defaut: "about 70 MB ·"
   }
 };
 
 var manifeste = null;
-var langue = "en";
+var langue = "fr";
 
 function appliquer(code) {
   langue = TEXTES[code] ? code : "en";
@@ -429,7 +576,15 @@ function appliquer(code) {
     var cle = noeuds[i].getAttribute("data-t");
     if (typeof t[cle] === "string") { noeuds[i].textContent = t[cle]; }
   }
-  var boutons = document.querySelectorAll(".langues button");
+  var alts = document.querySelectorAll("[data-t-alt]");
+  for (var k = 0; k < alts.length; k++) {
+    alts[k].alt = t[alts[k].getAttribute("data-t-alt")] || "";
+  }
+  var arias = document.querySelectorAll("[data-t-aria]");
+  for (var m = 0; m < arias.length; m++) {
+    arias[m].setAttribute("aria-label", t[arias[m].getAttribute("data-t-aria")] || "");
+  }
+  var boutons = document.querySelectorAll(".pastilles button");
   for (var j = 0; j < boutons.length; j++) {
     boutons[j].setAttribute("aria-pressed",
       boutons[j].getAttribute("data-langue") === langue ? "true" : "false");
@@ -437,21 +592,18 @@ function appliquer(code) {
   remplir();
 }
 
-// Le manifeste alimente la page : une seule source pour le numero de version,
-// l'adresse de telechargement, la taille et l'empreinte. Publier une version
-// sans mettre la page a jour devient donc impossible a rater.
+// Le manifeste alimente la page : numero de version, adresse de
+// telechargement, taille et empreinte viennent d'une seule source.
 function remplir() {
   var t = TEXTES[langue];
   document.getElementById("taille").textContent =
-    manifeste && manifeste.taille_mo
-      ? t.taille(manifeste.taille_mo) : t.taille_defaut;
+    manifeste && manifeste.taille_mo ? t.taille(manifeste.taille_mo) : t.taille_defaut;
   if (!manifeste) { return; }
   if (manifeste.url) {
     document.getElementById("lien-telechargement").href = manifeste.url;
   }
   if (manifeste.sha256) {
-    var nom = manifeste.url
-      ? manifeste.url.split("/").pop() : "Plume-installeur.exe";
+    var nom = manifeste.url ? manifeste.url.split("/").pop() : "Plume-installeur.exe";
     document.getElementById("empreinte").textContent =
       "Get-FileHash .\\" + nom + " -Algorithm SHA256\n\n" + manifeste.sha256;
   }
@@ -465,13 +617,12 @@ function remplir() {
   var choisie = null;
   try { choisie = sessionStorage.getItem("langue"); } catch (e) {}
   if (!choisie) {
-    var nav = (navigator.languages && navigator.languages[0])
-      || navigator.language || "en";
+    var nav = (navigator.languages && navigator.languages[0]) || navigator.language || "en";
     choisie = /^fr\b/i.test(nav) ? "fr" : "en";
   }
   appliquer(choisie);
 
-  var boutons = document.querySelectorAll(".langues button");
+  var boutons = document.querySelectorAll(".pastilles button");
   for (var i = 0; i < boutons.length; i++) {
     boutons[i].addEventListener("click", function () {
       var code = this.getAttribute("data-langue");
@@ -479,6 +630,24 @@ function remplir() {
       appliquer(code);
     });
   }
+
+  // La roue ouvre le panneau ; un clic ailleurs ou Echap le referme, comme
+  // dans l'application.
+  var roue = document.querySelector(".roue");
+  var panneau = document.getElementById("panneau");
+  function ouvrir(oui) {
+    panneau.classList.toggle("ouvert", oui);
+    roue.setAttribute("aria-expanded", oui ? "true" : "false");
+  }
+  roue.addEventListener("click", function (e) {
+    e.stopPropagation();
+    ouvrir(!panneau.classList.contains("ouvert"));
+  });
+  panneau.addEventListener("click", function (e) { e.stopPropagation(); });
+  document.addEventListener("click", function () { ouvrir(false); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { ouvrir(false); }
+  });
 })();
 
 fetch("version.json", { cache: "no-store" })
@@ -486,73 +655,51 @@ fetch("version.json", { cache: "no-store" })
   .then(function (m) { manifeste = m; remplir(); })
   .catch(function () { /* la page reste lisible sans le manifeste */ });
 
-// --- Le relief ------------------------------------------------------------
-// La classe est posee par le script : sans JavaScript, les sections restent
-// visibles au lieu de disparaitre en attendant une animation qui ne viendra
-// pas.
+// --- Les onglets suivent la lecture ---------------------------------------
+// L'onglet actif est celui de la section qu'on lit, comme dans Plume celui de
+// la page qu'on regarde.
 (function () {
-  var doux = window.matchMedia
-    && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (doux) { return; }
-  document.documentElement.className += " js";
-
-  // Les sections montent quand elles approchent du bas de la fenetre.
-  if (window.IntersectionObserver) {
-    var guetteur = new IntersectionObserver(function (entrees) {
-      for (var i = 0; i < entrees.length; i++) {
-        if (entrees[i].isIntersecting) {
-          entrees[i].target.classList.add("vu");
-          guetteur.unobserve(entrees[i].target);
-        }
+  var onglets = document.querySelectorAll(".onglet[data-section]");
+  if (!window.IntersectionObserver) { return; }
+  var guetteur = new IntersectionObserver(function (entrees) {
+    entrees.forEach(function (e) {
+      if (!e.isIntersecting) { return; }
+      for (var i = 0; i < onglets.length; i++) {
+        onglets[i].classList.toggle("actif",
+          onglets[i].getAttribute("data-section") === e.target.id);
       }
-    }, { rootMargin: "0px 0px -12% 0px" });
-    var montants = document.querySelectorAll(".monte");
-    for (var j = 0; j < montants.length; j++) { guetteur.observe(montants[j]); }
-  } else {
-    // Navigateur sans guetteur : on montre tout, plutot que rien.
-    document.documentElement.className =
-      document.documentElement.className.replace(" js", "");
-  }
-
-  // Parallaxe : quelques degres sur l'etincelle, suivant la souris. Bornee,
-  // et seulement sur un pointeur fin : sur un ecran tactile elle n'aurait
-  // aucun sens, et le survol y reste colle apres le doigt.
-  var etoile = document.querySelector(".logotype svg");
-  var fin = window.matchMedia && window.matchMedia("(pointer: fine)").matches;
-  if (etoile && fin) {
-    var enAttente = false;
-    window.addEventListener("mousemove", function (e) {
-      if (enAttente) { return; }
-      enAttente = true;
-      window.requestAnimationFrame(function () {
-        enAttente = false;
-        var dx = (e.clientX / window.innerWidth - 0.5) * 2;
-        var dy = (e.clientY / window.innerHeight - 0.5) * 2;
-        etoile.style.transform =
-          "perspective(600px) rotateY(" + (dx * 9).toFixed(2) + "deg)"
-          + " rotateX(" + (-dy * 9).toFixed(2) + "deg)"
-          + " translate(" + (dx * 5).toFixed(1) + "px,"
-          + (dy * 4).toFixed(1) + "px)";
-      });
     });
-  }
+  }, { rootMargin: "-45% 0px -50% 0px" });
+  ["accueil", "preuve", "fonctions", "installer"].forEach(function (id) {
+    var s = document.getElementById(id);
+    if (s) { guetteur.observe(s); }
+  });
 })();
 
-// --- L'intro --------------------------------------------------------------
-// Elle ne se joue qu'a l'arrivee. Revenir en arriere, ou recharger pour relire
-// un paragraphe, ne doit pas reimposer deux secondes et demie : une intro
-// qu'on subit deux fois devient une porte a pousser.
+// --- Les sections montent a l'approche -------------------------------------
+(function () {
+  var doux = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (doux || !window.IntersectionObserver) { return; }
+  document.documentElement.className += " js";
+  var guetteur = new IntersectionObserver(function (entrees) {
+    entrees.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add("vu"); guetteur.unobserve(e.target); }
+    });
+  }, { rootMargin: "0px 0px -10% 0px" });
+  var montants = document.querySelectorAll(".monte");
+  for (var j = 0; j < montants.length; j++) { guetteur.observe(montants[j]); }
+})();
+
+// --- L'intro, jouee a l'arrivee seulement -----------------------------------
 (function () {
   var toile = document.getElementById("intro");
   var page = document.getElementById("page");
-
   function reveler() {
     toile.classList.add("partie");
     page.classList.add("visible");
     document.body.classList.remove("attend");
     setTimeout(function () { toile.remove(); }, 400);
   }
-
   var dejaVue = false;
   try { dejaVue = sessionStorage.getItem("intro-vue") === "1"; } catch (e) {}
   if (dejaVue || !window.IntroPlume) { reveler(); return; }

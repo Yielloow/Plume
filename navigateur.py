@@ -75,16 +75,20 @@ clr.AddReference("System.Drawing")
 clr.AddReference(os.path.join(LIB, "Microsoft.Web.WebView2.Core.dll"))
 clr.AddReference(os.path.join(LIB, "Microsoft.Web.WebView2.WinForms.dll"))
 
+import System                                                      # noqa: E402
 from System import (AppDomain, Action, DateTime, DateTimeKind,   # noqa: E402
                     IntPtr, Uri)
 from System.Drawing import (Bitmap, Font, FontStyle, Graphics,  # noqa: E402
-                            Icon, Image, Point, Rectangle, Region, Size)
+                            Icon, Image, Point, PointF, Rectangle,
+                            RectangleF, Region, Size, SolidBrush)
+from System.Drawing.Drawing2D import FillMode                      # noqa: E402
 from System.Drawing.Imaging import ImageFormat                     # noqa: E402
 from System.IO import MemoryStream                                 # noqa: E402
 from System.Threading import ApartmentState, Thread, ThreadStart   # noqa: E402
 from System.Threading.Tasks import Task                            # noqa: E402
 from System.Windows.Forms import (                                 # noqa: E402
-    Application, ApplicationContext, BorderStyle, Cursor, DockStyle, Form,
+    Application, ApplicationContext, BorderStyle, Cursor, Cursors, DockStyle,
+    Form, TextRenderer,
     FormBorderStyle, FormWindowState, Keys, MouseButtons, Padding, Panel,
     FormStartPosition, Screen, TextBox, Timer, ToolTip,
     UnhandledExceptionMode)
@@ -157,6 +161,7 @@ class INFOS_MINMAX(ctypes.Structure):
 # WindowFromPoint prend la structure par valeur : elle doit donc etre declaree
 # avant. GA_ROOT remonte du controle survole a la fenetre qui le contient.
 user32 = ctypes.WinDLL("user32", use_last_error=True)
+user32.GetForegroundWindow.restype = ctypes.c_void_p
 user32.WindowFromPoint.restype = ctypes.c_void_p
 user32.WindowFromPoint.argtypes = [POINT_WIN]
 user32.GetAncestor.restype = ctypes.c_void_p
@@ -969,9 +974,28 @@ JS = r"""
 (function () {
   if (window.__plume) return;
   // Choix de l'utilisateur, garde par le site lui-meme : une seule source de
-  // verite, et la preference suit naturellement le domaine.
+  // verite, et la preference suit naturellement le domaine. Sur Twitch, le
+  // lecteur du site passe d'abord : mpv coute plus cher a la carte graphique
+  // (60 % contre 24,7 % mesures sur un live), il faut l'avoir choisi.
   try {
-    if (localStorage.getItem("__plume_lecteur") === "site") return;
+    if (/(^|\.)twitch\.tv$/i.test(location.hostname)
+        && localStorage.getItem("__plume_lecteur") !== "plume") {
+      // Le site garde son lecteur : on dit seulement ou l'on est, pour
+      // l'historique, le bouton du lecteur et sa bulle.
+      var vu = "";
+      var dire = function () {
+        if (location.href === vu) return;
+        vu = location.href;
+        try {
+          window.chrome.webview.postMessage(JSON.stringify({
+            type: "url", url: vu, titre: document.title || "",
+            lecteur: "site" }));
+        } catch (e) {}
+      };
+      setInterval(dire, 500);
+      addEventListener("DOMContentLoaded", function () { vu = ""; dire(); });
+      return;
+    }
   } catch (e) {}
   window.__plume = { url: "", actif: false };
 
@@ -1129,6 +1153,39 @@ JS = r"""
   });
 })();
 """
+
+
+# La bulle du lecteur : largeur, marge interieure, hauteur de sa pointe.
+L_BULLE = 300
+MARGE_BULLE = 14
+POINTE_BULLE = 8
+# Montree une fois par lancement, toutes fenetres confondues.
+_BULLE_LECTEUR_MONTREE = [False]
+
+
+# Entree d'un bandeau : il descend de 14 px en se devoilant. Joue a sa
+# creation seulement (`_vu`) : reecrire son texte ne le refait pas entrer.
+# Le decalage horizontal de -50 % est repris dans chaque etape, sans quoi
+# l'animation, qui remplace la transformation, le decentrerait.
+JS_ENTREE_BANDEAU = (
+    "if(!d._vu){d._vu=1;try{"
+    "if(!matchMedia('(prefers-reduced-motion: reduce)').matches)"
+    "d.animate([{opacity:0,transform:'translateX(-50%) translateY(-14px) "
+    "scale(.97)'},{opacity:1,transform:'translateX(-50%) translateY(0) "
+    "scale(1)'}],{duration:300,easing:'cubic-bezier(.22,.61,.36,1)'});"
+    "}catch(e){}}")
+# Sortie : il remonte en s'effacant, puis quitte la page.
+JS_SORTIE_BANDEAU = (
+    "function(){try{"
+    "if(matchMedia('(prefers-reduced-motion: reduce)').matches)"
+    "return d.remove();"
+    "var a=d.animate([{opacity:1,transform:'translateX(-50%) translateY(0)'},"
+    "{opacity:0,transform:'translateX(-50%) translateY(-10px)'}],"
+    "{duration:220,easing:'ease-in',fill:'forwards'});"
+    "a.onfinish=function(){d.remove();};}catch(e){d.remove();}}")
+# La bulle du lecteur : duree du fondu d'apparition, et son pas.
+FONDU_BULLE = 180
+PAS_FONDU = 15
 
 
 class Onglet(object):
@@ -1668,6 +1725,13 @@ class Navigateur(Form):
         # fausse et la roue rouvrait le panneau au lieu de le fermer.
         self._reglages_ouverts = False
         self._guet_clic = None    # minuteur qui guette un clic hors des menus
+        self._bulle = None        # bulle sortie du bouton du lecteur
+        self._bulle_ouverte = False
+        self._bulle_fin = None    # minuteur qui la retire d'elle-meme
+        self._bulle_fondu = None  # minuteur de son apparition
+        self._bulle_fondu_debut = 0.0
+        self._rect_essayer = Rectangle(0, 0, 0, 0)
+        self._survol_essayer = False
         self._items_reglages = []
         self._survol_reglage = -1
         self._rect_roue = Rectangle(0, 0, 0, 0)
@@ -1686,6 +1750,7 @@ class Navigateur(Form):
         self.police_croix = Font("Segoe UI Symbol", 9.0)
         self.police_plus = Font("Segoe UI", 12.0)
         self.police_petite = Font("Segoe UI", 8.0)
+        self.police_gras = Font("Segoe UI Semibold", 9.0)
 
         # zone des pages : ajoutee en premier pour que Dock.Fill prenne le reste
         self.contenu = Panel()
@@ -3032,6 +3097,200 @@ class Navigateur(Form):
         except Exception as e:
             journal("repli lecteur : %r" % (e,))
 
+    def proposer_lecteur_plume(self):
+        """Fait sortir la bulle du bouton du lecteur, une fois par lancement.
+
+        Sur un live Twitch lu par le lecteur du site : elle dit qu'il existe
+        un lecteur sans pub, et ce qu'il coute. Une fois suffit : la redire a
+        chaque chaine deviendrait une pub de plus.
+        """
+        if _BULLE_LECTEUR_MONTREE[0] or self._plein_ecran is not None:
+            return
+        if self._reglages_ouverts or self._items_menu:
+            return
+        try:
+            if (user32.GetForegroundWindow() or 0) != self.Handle.ToInt64():
+                return      # une fenetre en arriere-plan ne parle pas
+        except Exception:
+            return
+        # Le bouton n'existe qu'une fois la barre redessinee avec l'adresse.
+        self.barre_nav.Update()
+        if self._rect_lecteur.Width == 0:
+            return
+        if self._bulle is None:
+            self._bulle = self._creer_bulle()
+            if self._bulle is None:
+                return
+        _BULLE_LECTEUR_MONTREE[0] = True
+        largeur = L_BULLE
+        g = self._bulle.CreateGraphics()
+        try:
+            texte = g.MeasureString(core.t("lecteur_bulle_texte"), self.police,
+                                    largeur - 2 * MARGE_BULLE)
+        finally:
+            g.Dispose()
+        h_texte = int(texte.Height) + 2
+        hauteur = (POINTE_BULLE + 40 + h_texte + 14 + 28 + MARGE_BULLE)
+        mesure = TextRenderer.MeasureText(core.t("lecteur_bulle_bouton"),
+                                          self.police_gras)
+        l_bouton = mesure.Width + 28
+        self._rect_essayer = Rectangle(largeur - MARGE_BULLE - l_bouton,
+                                       hauteur - MARGE_BULLE - 28, l_bouton, 28)
+        self._bulle_h_texte = h_texte
+        try:
+            bouton = self.barre_nav.RectangleToScreen(self._rect_lecteur)
+        except Exception:
+            return
+        pointe = bouton.X + bouton.Width // 2
+        zone = Screen.FromHandle(self.Handle).WorkingArea
+        # La pointe vise le bouton ; la bulle s'etend vers la gauche, le
+        # bouton etant au bout du champ d'adresse.
+        x = min(max(zone.Left + 4, pointe - largeur + 34),
+                zone.Right - largeur - 4)
+        y = bouton.Bottom + 4
+        self._bulle_pointe = pointe - x
+        self._bulle.Size = Size(largeur, hauteur)
+        self._forme_bulle(largeur, hauteur)
+        self._bulle.Opacity = 0.0
+        user32.SetWindowPos(
+            ctypes.c_void_p(self._bulle.Handle.ToInt64()),
+            ctypes.c_void_p(HWND_TOPMOST), x, y, largeur, hauteur,
+            SWP_NOACTIVATE | SWP_SHOWWINDOW)
+        self._bulle_ouverte = True
+        self._survol_essayer = False
+        self._bulle.Invalidate()
+        self._fondre_bulle()
+        self._guetter_clic_exterieur()
+        if self._bulle_fin is None:
+            self._bulle_fin = Timer()
+            self._bulle_fin.Interval = 15000
+            self._bulle_fin.Tick += lambda e, a: self.fermer_bulle()
+        self._bulle_fin.Stop()
+        self._bulle_fin.Start()
+
+    def _fondre_bulle(self):
+        """Monte l'opacite de la bulle de 0 a 1, en FONDU_BULLE ms."""
+        debut = time.time()
+        if self._bulle_fondu is None:
+            self._bulle_fondu = Timer()
+            self._bulle_fondu.Interval = PAS_FONDU
+
+            def pas(envoyeur, args):
+                avance = (time.time() - self._bulle_fondu_debut) * 1000.0 \
+                    / FONDU_BULLE
+                if avance >= 1.0 or not self._bulle_ouverte:
+                    self._bulle_fondu.Stop()
+                    avance = 1.0
+                # Adouci en fin de course, comme les onglets.
+                self._bulle.Opacity = 1.0 - (1.0 - avance) ** 3
+            self._bulle_fondu.Tick += pas
+        self._bulle_fondu_debut = debut
+        self._bulle_fondu.Stop()
+        self._bulle_fondu.Start()
+
+    def _creer_bulle(self):
+        try:
+            bulle = Form()
+            bulle.FormBorderStyle = getattr(FormBorderStyle, "None")
+            bulle.StartPosition = FormStartPosition.Manual
+            bulle.ShowInTaskbar = False
+            bulle.BackColor = ui.FOND_NAV
+            bulle.Paint += self._peindre_bulle
+            bulle.MouseMove += self._souris_bulle
+            bulle.MouseClick += self._clic_bulle
+            ui.double_tampon(bulle)
+            poignee = bulle.Handle.ToInt64()
+            style = _lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE)
+            _ecrire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE,
+                          int(style) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            rendre_inactivable(bulle)
+            return bulle
+        except Exception as e:
+            journal("bulle du lecteur : %s" % e)
+            return None
+
+    def _pointe_bulle(self):
+        """Les trois sommets de la pointe, qui monte vers le bouton."""
+        cx = float(self._bulle_pointe)
+        return (PointF(cx - POINTE_BULLE, float(POINTE_BULLE) + 1),
+                PointF(cx, 0.0),
+                PointF(cx + POINTE_BULLE, float(POINTE_BULLE) + 1))
+
+    def _forme_bulle(self, largeur, hauteur):
+        """Decoupe la fenetre : un cadre arrondi et sa pointe, rien autour."""
+        try:
+            chemin = ui.chemin_arrondi(0, POINTE_BULLE, largeur,
+                                       hauteur - POINTE_BULLE, 10)
+            chemin.FillMode = FillMode.Winding
+            chemin.AddPolygon(System.Array[PointF](self._pointe_bulle()))
+            ancienne = self._bulle.Region
+            self._bulle.Region = Region(chemin)
+            if ancienne is not None:
+                ancienne.Dispose()
+        except Exception as e:
+            journal("forme de la bulle : %s" % e)
+
+    def _peindre_bulle(self, envoyeur, args):
+        g = args.Graphics
+        ui.preparer(g)
+        largeur, hauteur = envoyeur.Width, envoyeur.Height
+        ui.remplir_arrondi(g, ui.FOND_NAV, 0, POINTE_BULLE, largeur,
+                           hauteur - POINTE_BULLE, 10)
+        ui.contour_arrondi(g, ui.ACCENT, 0, POINTE_BULLE, largeur - 1,
+                           hauteur - POINTE_BULLE - 1, 10, 1)
+        gauche, sommet, droite = self._pointe_bulle()
+        pinceau = SolidBrush(ui.FOND_NAV)
+        g.FillPolygon(pinceau, System.Array[PointF]((
+            PointF(gauche.X, gauche.Y + 1), sommet,
+            PointF(droite.X, droite.Y + 1))))
+        pinceau.Dispose()
+        ui.trait(g, ui.ACCENT, gauche.X, gauche.Y, sommet.X, sommet.Y)
+        ui.trait(g, ui.ACCENT, sommet.X, sommet.Y, droite.X, droite.Y)
+
+        haut = POINTE_BULLE + MARGE_BULLE
+        ui.ecran_lecteur(g, ui.ACCENT_PALE, MARGE_BULLE, haut, 20, 18, True)
+        ui.texte_tronque(g, core.t("lecteur_bulle_titre"), self.police_gras,
+                         ui.TEXTE, MARGE_BULLE + 28, haut, largeur - 60, 18,
+                         milieu=True)
+        pinceau = SolidBrush(ui.TEXTE2)
+        try:
+            g.DrawString(core.t("lecteur_bulle_texte"), self.police, pinceau,
+                         RectangleF(float(MARGE_BULLE), float(haut + 28),
+                                    float(largeur - 2 * MARGE_BULLE),
+                                    float(self._bulle_h_texte)))
+        finally:
+            pinceau.Dispose()
+        r = self._rect_essayer
+        ui.remplir_arrondi(g, ui.ACCENT_PALE if self._survol_essayer
+                           else ui.ACCENT, r.X, r.Y, r.Width, r.Height,
+                           0, "pilule")
+        ui.centrer(g, core.t("lecteur_bulle_bouton"), self.police_gras,
+                   ui.BLANC, r)
+
+    def _souris_bulle(self, envoyeur, args):
+        dessus = self._rect_essayer.Contains(args.Location)
+        if dessus != self._survol_essayer:
+            self._survol_essayer = dessus
+            envoyeur.Cursor = Cursors.Hand if dessus else Cursors.Default
+            envoyeur.Invalidate()
+
+    def _clic_bulle(self, envoyeur, args):
+        essayer = self._rect_essayer.Contains(args.Location)
+        self.fermer_bulle()
+        if essayer and self.actif and self.actif.lecteur_site:
+            self.basculer_lecteur()
+
+    def fermer_bulle(self):
+        if self._bulle_fin is not None:
+            self._bulle_fin.Stop()
+        if self._bulle is None or not self._bulle_ouverte:
+            return
+        self._bulle_ouverte = False
+        try:
+            user32.ShowWindow(ctypes.c_void_p(self._bulle.Handle.ToInt64()), 0)
+        except Exception:
+            pass
+
     def basculer_lecteur(self):
         """Passe d'un lecteur a l'autre, et recharge la page.
 
@@ -3924,6 +4183,9 @@ class Navigateur(Form):
             return None
 
     def fermer_reglages(self):
+        # Toutes les occasions de fermer le panneau (clic ailleurs, fenetre
+        # deplacee, plein ecran, changement d'onglet) valent pour la bulle.
+        self.fermer_bulle()
         self._survol_reglage = -1
         if self._reglages is None or not self._reglages_ouverts:
             return
@@ -4118,6 +4380,8 @@ class Navigateur(Form):
             ouverts.append(self._reglages)
         if self._items_menu and self._menu is not None:
             ouverts.append(self._menu)
+        if self._bulle_ouverte and self._bulle is not None:
+            ouverts.append(self._bulle)
         if not ouverts:
             self._guet_clic.Stop()
             return
@@ -4940,7 +5204,8 @@ class Navigateur(Form):
                        str(message.get("url"))[:60]))
         if genre == "url":
             onglet.url = message.get("url") or onglet.url
-            onglet.lecteur_site = False     # le script parle, donc il agit
+            # Le script dit lui-meme quel lecteur il laisse faire.
+            onglet.lecteur_site = (message.get("lecteur") == "site")
             self.noter_historique(onglet.url, message.get("titre") or "")
             self.appliquer_zoom(onglet)
             self.enregistrer_session()
@@ -4957,6 +5222,8 @@ class Navigateur(Form):
                 # donc inutilisable, son rectangle vide empechant meme la
                 # detection du survol qui aurait provoque un nouveau rendu.
                 self.barre_nav.Invalidate()
+                if onglet.lecteur_site and core.est_chaine_twitch(onglet.url):
+                    self.proposer_lecteur_plume()
         elif genre == "hors_video":
             onglet.incrustation.arreter()   # meme en arriere-plan : la page a change
         elif onglet is not self.actif:
@@ -5187,8 +5454,8 @@ class Navigateur(Form):
             "d.style.cssText=%s;d.textContent='';"
             "var s=document.createElement('span');s.textContent=%s;"
             "s.style.flex='1';d.appendChild(s);"
-            "%s})();"
-            % (json.dumps(style), json.dumps(texte),
+            "%s%s})();"
+            % (json.dumps(style), json.dumps(texte), JS_ENTREE_BANDEAU,
                ("var b=document.createElement('button');b.textContent=%s;"
                 "b.style.cssText=%s;b.onclick=function(){"
                 "try{window.chrome.webview.postMessage(JSON.stringify("
@@ -5246,11 +5513,12 @@ class Navigateur(Form):
                     "if(!d){d=document.createElement('div');"
                     "d.id='plume-mot';document.body.appendChild(d);}"
                     "d.textContent=%s;d.style.cssText=%s;"
-                    "if(d._t)clearTimeout(d._t);"
+                    "if(d._t)clearTimeout(d._t);%s"
                     "%s})();"
                     % (json.dumps(texte), json.dumps(style),
+                       JS_ENTREE_BANDEAU,
                        "" if garder
-                       else "d._t=setTimeout(function(){d.remove();},12000);"))
+                       else "d._t=setTimeout(%s,12000);" % JS_SORTIE_BANDEAU))
                 self.actif.vue.CoreWebView2.ExecuteScriptAsync(script)
             except Exception as e:
                 journal("bandeau : %s" % e)
