@@ -196,6 +196,32 @@ h2 {
               0 0 0 1px rgba(124, 92, 255, .14);
 }
 .capture img { display: block; width: 100%; height: auto; }
+#preuve > .etiquette { display: block; margin-bottom: 26px; }
+
+/* Les captures posees en biais, comme un cliche sur la table : elles se
+   redressent au survol. Un reflet oblique passe dessus a leur arrivee. */
+.biais { perspective: 1600px; padding: 10px 0 6px; }
+.biais .capture {
+  transform: rotateX(7deg) rotateY(-9deg) rotateZ(1.2deg);
+  transform-origin: 50% 60%;
+  transition: transform .7s cubic-bezier(.22, .61, .36, 1),
+              box-shadow .7s;
+}
+.biais.inverse .capture { transform: rotateX(7deg) rotateY(9deg) rotateZ(-1.2deg); }
+.biais .capture:hover {
+  transform: none;
+  box-shadow: 0 50px 110px -40px rgba(0, 0, 0, .95),
+              0 0 0 1px rgba(167, 139, 250, .35),
+              0 0 60px -10px rgba(124, 92, 255, .35);
+}
+.capture::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%,
+              rgba(255, 255, 255, .10) 48%, transparent 60%);
+  transform: translateX(-120%);
+}
+.monte.vu .capture::after { animation: reflet 1.6s .5s ease-out forwards; }
+@keyframes reflet { to { transform: translateX(120%); } }
 /* La ligne de Plume, surlignee. Ses bornes sont mesurees sur la capture. */
 .capture .surligne {
   position: absolute; left: 0; right: 0;
@@ -279,7 +305,13 @@ footer {
   .panneau { right: 8px; left: 8px; width: auto; }
   section { padding-top: 56px; }
 }
+@media (max-width: 640px) {
+  .biais .capture { transform: rotateX(4deg) rotateY(-4deg) rotateZ(.6deg); }
+  .biais.inverse .capture { transform: rotateX(4deg) rotateY(4deg) rotateZ(-.6deg); }
+}
 @media (prefers-reduced-motion: reduce) {
+  .biais .capture, .biais.inverse .capture { transform: none; transition: none; }
+  .monte.vu .capture::after { animation: none; }
   html { scroll-behavior: auto; }
   .halo { animation: none; }
   #page, .panneau, .carte { transition: none; }
@@ -347,13 +379,11 @@ footer {
 
 <section id="preuve" class="monte">
   <span class="etiquette" data-t="preuve-etiquette"></span>
-  <h2 data-t="preuve-titre"></h2>
-  <p class="chapeau" data-t="preuve-texte"></p>
-  <div class="capture">
+  <div class="biais"><div class="capture">
     <img src="gestionnaire-des-taches.png" width="774" height="266"
          data-t-alt="capture-alt" alt="">
     <div class="surligne" aria-hidden="true"></div>
-  </div>
+  </div></div>
   <div class="chiffres">
     <div class="fiche plume">
       <div class="nom"><svg width="13" height="13" viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>Plume.exe</div>
@@ -371,11 +401,11 @@ footer {
   <div class="suite">
     <h3 data-t="moteur-titre"></h3>
     <p class="chapeau" data-t="moteur-texte"></p>
-    <div class="capture">
+    <div class="biais inverse"><div class="capture">
       <img src="gestionnaire-webview2.png" width="912" height="139"
            data-t-alt="moteur-alt" alt="">
       <div class="surligne" style="--haut: 79.5%; --hauteur: 20%" aria-hidden="true"></div>
-    </div>
+    </div></div>
     <div class="chiffres">
       <div class="fiche plume">
         <div class="nom"><svg width="13" height="13" viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg><span data-t="moteur-nom"></span></div>
@@ -470,8 +500,6 @@ var TEXTES = {
     "rien-installer": "rien d'autre à installer",
     defiler: "Voir en vrai",
     "preuve-etiquette": "Pris sur le vif",
-    "preuve-titre": "Un live Twitch, et presque rien au compteur.",
-    "preuve-texte": "Le Gestionnaire des tâches d'une amie, pendant qu'elle suivait un live Twitch dans Plume.",
     "capture-alt": "Gestionnaire des tâches : Brave Browser à 30,7 % de processeur et 708,6 Mo, Plume.exe à 0,5 % et 118,9 Mo pendant un live Twitch.",
     processeur: "Processeur", memoire: "Mémoire",
     "preuve-legende": "Chiffres lus sur la capture, ligne par ligne.",
@@ -521,8 +549,6 @@ var TEXTES = {
     "rien-installer": "nothing else to install",
     defiler: "See it for real",
     "preuve-etiquette": "Caught in the act",
-    "preuve-titre": "A Twitch live, and almost nothing on the meter.",
-    "preuve-texte": "A friend's Task Manager, while she was watching a Twitch live in Plume.",
     "capture-alt": "Task Manager: Brave Browser at 30.7% CPU and 708.6 MB, Plume.exe at 0.5% and 118.9 MB during a Twitch live.",
     processeur: "CPU", memoire: "Memory",
     "preuve-legende": "Figures read off the screenshot, line by line.",
