@@ -1230,6 +1230,7 @@ class Onglet(object):
             noyau.DOMContentLoaded += self.au_dom
             noyau.NavigationCompleted += self.a_la_fin_navigation
             noyau.DocumentTitleChanged += self.au_titre
+            noyau.ContainsFullScreenElementChanged += self.au_plein_ecran
             noyau.FaviconChanged += self.au_favicon
             noyau.DownloadStarting += self.au_telechargement
             noyau.Settings.IsStatusBarEnabled = False
@@ -1397,6 +1398,17 @@ class Onglet(object):
         self.derniere_activite = time.time()
         if self.nav.actif is self:
             self.nav.rafraichir_navigation()
+
+    def au_plein_ecran(self, envoyeur, args):
+        """La page entre en plein ecran, ou en sort : lecteur video, jeu..."""
+        try:
+            demande = bool(self.vue.CoreWebView2.ContainsFullScreenElement)
+        except Exception:
+            return
+        try:
+            self.nav.plein_ecran_page(self, demande)
+        except Exception as e:
+            journal("plein ecran : %r" % (e,))
 
     def au_focus_page(self, envoyeur, args):
         try:
@@ -1612,6 +1624,9 @@ class Navigateur(Form):
         self._procedure = None          # notre procedure de fenetre
         self._ancienne_procedure = None  # celle de WinForms, que l'on chaine
         self._avant_agrandissement = None
+        # Ce qu'il faut remettre en sortant du plein ecran d'une page :
+        # l'onglet concerne, l'etat agrandi, et la taille normale.
+        self._plein_ecran = None
         # Le deplacement de la fenetre appartient a Windows depuis que la
         # partie libre de la barre repond HTCAPTION : il n'y a plus d'etat a
         # tenir ici. Seul le deplacement d'un ONGLET reste a nous.
@@ -2070,7 +2085,7 @@ class Navigateur(Form):
 
     def maj_barre_favoris(self):
         visible = bool(self.favoris["elements"]) and \
-            self.favoris["barre_visible"]
+            self.favoris["barre_visible"] and self._plein_ecran is None
         if self.barre_favoris.Visible != visible:
             self.barre_favoris.Visible = visible
             self.replacer()
@@ -3424,13 +3439,19 @@ class Navigateur(Form):
                 # Une fenetre agrandie enregistre la taille a laquelle elle
                 # reviendrait, pas celle de l'ecran : sinon « restaurer »
                 # n'aurait nulle part ou revenir au prochain lancement.
-                if fenetre._maximise and fenetre._avant_agrandissement:
+                agrandie = bool(fenetre._maximise)
+                if fenetre._plein_ecran is not None:
+                    # Fermee en plein ecran : on retient la fenetre d'avant,
+                    # pas l'ecran entier.
+                    r = fenetre._plein_ecran["normales"]
+                    agrandie = fenetre._plein_ecran["agrandie"]
+                elif fenetre._maximise and fenetre._avant_agrandissement:
                     r = fenetre._avant_agrandissement
                 else:
                     r = fenetre.Bounds
                 fenetres.append({"onglets": urls, "actif": indice,
                                  "bornes": [r.X, r.Y, r.Width, r.Height],
-                                 "agrandie": bool(fenetre._maximise)})
+                                 "agrandie": agrandie})
             except Exception:
                 continue
         core.enregistrer_session({"fenetres": fenetres})
@@ -4296,6 +4317,51 @@ class Navigateur(Form):
                     % (str(onglet.url)[:60], age))
             onglet.endormir()
 
+    def plein_ecran_page(self, onglet, demande):
+        """Met la fenetre en plein ecran pour la page, ou la remet comme avant.
+
+        WebView2 n'agrandit l'element qu'a la taille de son cadre : c'est a la
+        fenetre de couvrir l'ecran. Sans cela, le plein ecran du lecteur
+        YouTube gardait les barres de Plume et les bords de la fenetre.
+        """
+        if demande:
+            if onglet is not self.actif or self._plein_ecran is not None:
+                return
+            self.fermer_reglages()
+            self.fermer_menu()
+            agrandie = bool(self._maximise)
+            normales = (self._avant_agrandissement if agrandie
+                        and self._avant_agrandissement else self.Bounds)
+            self._plein_ecran = {"onglet": onglet, "agrandie": agrandie,
+                                 "normales": normales}
+            self.barre_onglets.Visible = False
+            self.barre_nav.Visible = False
+            self.barre_favoris.Visible = False
+            self.Padding = Padding(0)
+            # Une fenetre agrandie ne se laisse pas deplacer au-dela de la
+            # zone de travail : on la remet d'abord a l'etat normal.
+            if agrandie:
+                self.WindowState = FormWindowState.Normal
+            ecran = Screen.FromHandle(self.Handle).Bounds
+            user32.SetWindowPos(ctypes.c_void_p(self.Handle.ToInt64()), None,
+                                ecran.X, ecran.Y, ecran.Width, ecran.Height,
+                                SWP_FRAMECHANGED | SWP_SHOWWINDOW)
+            return
+        etat, self._plein_ecran = self._plein_ecran, None
+        if etat is None:
+            return
+        self.Padding = Padding(1)
+        self.barre_onglets.Visible = True
+        self.barre_nav.Visible = True
+        self.maj_barre_favoris()
+        # La taille normale d'abord, puis l'agrandissement : dans l'autre
+        # ordre, « restaurer » ramenerait ensuite la fenetre a la taille de
+        # l'ecran entier.
+        self.Bounds = etat["normales"]
+        if etat["agrandie"]:
+            self.WindowState = FormWindowState.Maximized
+        self.replacer()
+
     def activer(self, onglet, glisser=False):
         # `glisser` n'est vrai que pour un changement d'onglet DEMANDE : clic
         # ou raccourci. Une restauration de session, une fermeture ou un
@@ -4303,6 +4369,14 @@ class Navigateur(Form):
         # defilerait vingt fois de suite.
         self._finir_glisse_page()
         self._finir_chute()
+        if (self._plein_ecran is not None
+                and self._plein_ecran["onglet"] is not onglet):
+            try:
+                self._plein_ecran["onglet"].vue.CoreWebView2.ExecuteScriptAsync(
+                    "document.fullscreenElement && document.exitFullscreen()")
+            except Exception:
+                pass
+            self.plein_ecran_page(None, False)
         sortant = self.actif if (glisser and onglet is not self.actif) else None
         sens = 0
         if sortant is not None and sortant in self.onglets \
@@ -5416,7 +5490,13 @@ class Navigateur(Form):
 
         Sans cette reponse, la zone client couvrant toute la fenetre, une
         fenetre agrandie deborderait de l'ecran de l'epaisseur du cadre.
+
+        En plein ecran d'une page, on ne repond pas : la taille maximale posee
+        ici est celle de la zone de travail, barre des taches exclue, et
+        Windows aurait rogne la fenetre a cette taille.
         """
+        if getattr(self, "_plein_ecran", None) is not None:
+            return False
         ecran = user32.MonitorFromWindow(
             ctypes.c_void_p(self.Handle.ToInt64()), MONITOR_AU_PLUS_PRES)
         if not ecran:
