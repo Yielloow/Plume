@@ -265,6 +265,53 @@ def _halo_disque(graphiques, couleur, cx, cy, rayon, force=1.0):
         pinceau.Dispose()
 
 
+_ENCRE = {}
+
+
+def bornes_encrees(graphiques, texte, police):
+    """Haut et bas reels du texte, mesures sur le contour des lettres.
+
+    `MeasureString` rend la boite de ligne : elle reserve la place des accents
+    et des jambages, vides dans « Plume ». Centrer le mot sur cette boite le
+    posait visiblement plus bas que l'etincelle d'a cote. Le contour reel se
+    mesure une fois par taille de police, puis se retient.
+
+    Les deux valeurs sont des ecarts par rapport au point ou `DrawString`
+    ecrit, dans les memes unites que le dessin.
+    """
+    cle = (texte, round(float(police.Size), 2), police.FontFamily.Name,
+           int(police.Style), int(graphiques.DpiY))
+    connu = _ENCRE.get(cle)
+    if connu is not None:
+        return connu
+    # Repli raisonnable si la mesure echoue : la boite de ligne.
+    bornes = (0.0, float(police.GetHeight(graphiques)))
+    chemin = None
+    format_ = None
+    try:
+        chemin = GraphicsPath()
+        format_ = StringFormat(StringFormat.GenericTypographic)
+        # `AddString` prend une taille en unites de dessin, `Font` une taille
+        # en points : la conversion passe par la resolution du support.
+        taille = float(police.Size) * float(graphiques.DpiY) / 72.0
+        chemin.AddString(texte, police.FontFamily, int(police.Style), taille,
+                         PointF(0.0, 0.0), format_)
+        rect = chemin.GetBounds()
+        if rect.Height > 0:
+            bornes = (float(rect.Top), float(rect.Bottom))
+    except Exception:
+        pass
+    finally:
+        for objet in (chemin, format_):
+            try:
+                if objet is not None:
+                    objet.Dispose()
+            except Exception:
+                pass
+    _ENCRE[cle] = bornes
+    return bornes
+
+
 def _equerre(graphiques, couleur, x, y, sx, sy, longueur, epaisseur):
     """Un coin en equerre : deux traits partant du meme angle."""
     remplir_arrondi(graphiques, couleur,
@@ -383,10 +430,13 @@ def peindre_intro(graphiques, largeur, hauteur, t, police, etalement=0.0,
     x = (largeur - total) / 2.0
     milieu = hauteur / 2.0
     x0_etincelle = x + rayon_etincelle
-    haut_texte = milieu - police.Size * 0.74
-    # Sous les jambages, pas dessus : a 0.66 le trait mordait sur le bas des
-    # lettres. Le point et le trait partagent desormais la meme ligne.
-    y_trait = milieu + police.Size * 0.92
+    # Le mot se centre sur ce qui se voit de lui, du haut du P au bas des
+    # lettres : c'est ce qui le met a la hauteur de l'etincelle.
+    encre_haut, encre_bas = bornes_encrees(graphiques, mot, police)
+    haut_texte = milieu - (encre_haut + encre_bas) / 2.0
+    # Sous les lettres, jamais dessus : le trait se place par rapport a leur
+    # bas reel, et le point partage sa ligne.
+    y_trait = haut_texte + encre_bas + police.Size * 0.26
     x_point = x + rayon_etincelle * 2 + ecart + l_mot + ecart * 0.5
 
     # 1. L'etincelle eclot, avec un leger depassement : elle arrive, elle ne

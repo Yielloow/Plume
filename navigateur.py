@@ -6362,6 +6362,13 @@ class Navigateur(Form):
                 except Exception:
                     pass
 
+            # La derniere fenetre se replie sur la carte de l'ouverture ;
+            # les autres s'effacent simplement, l'application reste la. Qui a
+            # coupe l'ouverture ne veut pas non plus de sa fermeture.
+            if len(FENETRES) <= 1 and core.CONFIG.get("intro", True):
+                jouer_repli(self)
+                pour_de_bon()
+                return
             self.fondre(0.0, DUREE_FENETRE_FERME, pour_de_bon)
             return
         self._arreter_fondu()
@@ -6461,6 +6468,8 @@ def deja_ouvert(url):
 # changer d'avis, trop peu pour donner l'impression d'attendre.
 DUREE_AVANT_MAJ = 5
 DUREE_MAX_INTRO = 12.0
+DUREE_REPLI = 0.40         # la fenetre revient a la carte du depart
+DUREE_FONDU_REPLI = 0.16   # puis la carte s'efface
 DUREE_EFFACEMENT = 0.80    # le logotype s'efface, fenetre encore immobile
 DUREE_ETALEMENT = 0.65     # l'ouverture rejoint les bords de la fenetre
 DUREE_FONDU_CROISE = 0.28  # puis les deux se croisent, l'une sort, l'autre entre
@@ -6689,6 +6698,112 @@ class Ouverture(object):
         while not self.termine.is_set() and time.time() < fin:
             Application.DoEvents()
             time.sleep(0.016)
+
+
+def jouer_repli(fenetre):
+    """Referme la derniere fenetre comme l'ouverture l'avait ouverte, a l'envers.
+
+    Les quatre equerres reviennent des bords vers une carte au centre, qui
+    s'efface : l'ouverture rendue. On ne peut pas dessiner sur la fenetre
+    elle-meme, sa surface appartient aux vues WebView2 ; une fenetre de meme
+    taille prend donc sa place le temps du repli, et la vraie s'efface
+    derriere sans qu'on voie le raccord.
+
+    Joue sur le fil de la fenetre, juste avant la fermeture : plus rien
+    d'autre n'a besoin de tourner a cet instant.
+    """
+    boite = None
+    try:
+        bornes = fenetre.Bounds
+        if bornes.Width < 360 or bornes.Height < 260:
+            return                      # trop petite : le repli ne se lirait pas
+        vue = {"l": bornes.Width, "h": bornes.Height, "avance": 1.0}
+
+        def peindre(envoyeur, args):
+            try:
+                g = args.Graphics
+                ui.preparer(g)
+                g.Clear(ui.FOND_PAGE)
+                ui.peindre_etalement(g, vue["l"], vue["h"], vue["avance"])
+            except Exception:
+                pass
+
+        boite = Form()
+        boite.FormBorderStyle = getattr(FormBorderStyle, "None")
+        boite.StartPosition = FormStartPosition.Manual
+        boite.ShowInTaskbar = False
+        boite.Text = ""
+        boite.BackColor = ui.FOND_PAGE
+        ui.double_tampon(boite)
+        boite.Bounds = bornes
+        boite.Paint += peindre
+        boite.Show()
+        user32.SetWindowPos(
+            ctypes.c_void_p(boite.Handle.ToInt64()),
+            ctypes.c_void_p(HWND_TOPMOST), 0, 0, 0, 0,
+            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE)
+        # La vraie fenetre s'en va maintenant : la carte est deja par-dessus,
+        # rien ne clignote.
+        user32.ShowWindow(ctypes.c_void_p(fenetre.Handle.ToInt64()), 0)
+
+        cx = bornes.X + bornes.Width / 2.0
+        cy = bornes.Y + bornes.Height / 2.0
+        l_carte = min(560, bornes.Width)
+        h_carte = min(220, bornes.Height)
+        depart = time.time()
+        while True:
+            p = (time.time() - depart) / DUREE_REPLI
+            if p >= 1.0:
+                break
+            # Part doucement, finit vite : l'inverse de l'etirement, qui part
+            # vite et se pose.
+            e = p * p
+            # L'etalement ne redescend pas jusqu'a zero : a bout de course, il
+            # effacerait les equerres avant meme que la carte ne s'efface, et
+            # le repli finirait sur un rectangle vide.
+            vue["avance"] = 0.95 - 0.85 * e
+            vue["l"] = int(bornes.Width + (l_carte - bornes.Width) * e)
+            vue["h"] = int(bornes.Height + (h_carte - bornes.Height) * e)
+            boite.Bounds = Rectangle(int(cx - vue["l"] / 2.0),
+                                     int(cy - vue["h"] / 2.0),
+                                     vue["l"], vue["h"])
+            boite.Invalidate()
+            Application.DoEvents()
+            time.sleep(0.016)
+        vue["avance"] = 0.10
+        vue["l"], vue["h"] = int(l_carte), int(h_carte)
+        boite.Bounds = Rectangle(int(cx - l_carte / 2.0),
+                                 int(cy - h_carte / 2.0),
+                                 int(l_carte), int(h_carte))
+        try:
+            # Les coins arrondis de la carte, une seule fois : les suivre a
+            # chaque image couterait un objet GDI par image.
+            boite.Region = Region(
+                ui.chemin_arrondi(0, 0, int(l_carte), int(h_carte), 18))
+        except Exception:
+            pass
+        boite.Invalidate()
+        Application.DoEvents()
+        depart = time.time()
+        while True:
+            p = (time.time() - depart) / DUREE_FONDU_REPLI
+            if p >= 1.0:
+                break
+            try:
+                boite.Opacity = max(0.0, 1.0 - p)
+            except Exception:
+                break
+            Application.DoEvents()
+            time.sleep(0.016)
+    except Exception as e:
+        journal("repli : %r" % (e,))
+    finally:
+        try:
+            if boite is not None:
+                boite.Close()
+                boite.Dispose()
+        except Exception:
+            pass
 
 
 def zone_de_depart(fenetres):
