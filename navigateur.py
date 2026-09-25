@@ -162,6 +162,11 @@ class INFOS_MINMAX(ctypes.Structure):
 # avant. GA_ROOT remonte du controle survole a la fenetre qui le contient.
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 user32.GetForegroundWindow.restype = ctypes.c_void_p
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+# Horloge des minuteurs : Windows la laisse a ~15,6 ms au repos, ce qui fait
+# battre une animation de 16 ms une image sur deux.
+winmm = ctypes.WinDLL("winmm")
+SW_RESTORE = 9
 user32.WindowFromPoint.restype = ctypes.c_void_p
 user32.WindowFromPoint.argtypes = [POINT_WIN]
 user32.GetAncestor.restype = ctypes.c_void_p
@@ -484,6 +489,11 @@ PERIODE_VEILLE = 15000       # ms
 # arrivant, la fermeture accelere en partant. Une seule courbe pour les deux
 # donne un mouvement mou, on l'a deja mesure sur l'animation du lecteur.
 PERIODE_ANIM = 16            # ms, soit environ 60 images par seconde
+# Au-dela, une page video dont la memoire est repartie est rechargee sans
+# examen : mesure de prudence, son lecteur ne repart quasiment jamais.
+VEILLE_LONGUE = 900          # secondes
+# Le temps que la page se remette en route avant qu'on regarde son lecteur.
+DELAI_EXAMEN_LECTEUR = 1500  # ms
 DUREE_OUVERTURE = 0.17       # s
 DUREE_FERMETURE = 0.14       # s
 DUREE_FENETRE_OUVRE = 0.22   # s, apparition de la fenetre
@@ -620,6 +630,35 @@ RDW_FRAME = 0x0400
 # quatre lignes, 227,227,227 puis 255,255,255 puis deux fois 180,180,180. On
 # repeint un peu plus large, la marge ne coute rien.
 HAUTEUR_CADRE_SYSTEME = 8
+
+
+def ramener_devant(fenetre):
+    """Sort la fenetre de sa reduction et la met au premier plan.
+
+    Windows refuse `SetForegroundWindow` a un processus qui n'a pas la main :
+    il se contente de faire clignoter la barre des taches, et le lien qu'on
+    vient d'ouvrir reste invisible. La parade documentee est de s'attacher un
+    instant au fil de la fenetre de premier plan, le temps de l'appel.
+    """
+    try:
+        poignee = ctypes.c_void_p(fenetre.Handle.ToInt64())
+        if user32.IsIconic(poignee):
+            # SW_RESTORE rend son etat d'avant : agrandie si elle l'etait.
+            user32.ShowWindow(poignee, SW_RESTORE)
+        devant = user32.GetForegroundWindow() or 0
+        nous = kernel32.GetCurrentThreadId()
+        eux = user32.GetWindowThreadProcessId(ctypes.c_void_p(devant), None)
+        attache = bool(eux) and eux != nous
+        if attache:
+            user32.AttachThreadInput(eux, nous, True)
+        try:
+            user32.BringWindowToTop(poignee)
+            user32.SetForegroundWindow(poignee)
+        finally:
+            if attache:
+                user32.AttachThreadInput(eux, nous, False)
+    except Exception as e:
+        journal("premier plan : %r" % (e,))
 
 
 def rendre_inactivable(fenetre):
@@ -970,8 +1009,59 @@ JS_SANS_PUB = r"""
 """
 
 
+# Ce que la page repond apres une veille profonde : vrai si son lecteur est
+# hors d'usage. Trois signes, du plus sur au plus discret : le carton
+# d'erreur de YouTube, une video qui porte un code d'erreur, et une video
+# chargee qui a perdu toute sa matiere.
+JS_LECTEUR_CASSE = r"""
+(function () {
+  try {
+    if (document.querySelector(".ytp-error, .ytp-error-content")) return true;
+    var v = document.querySelector("video");
+    if (!v) return false;
+    if (v.error) return true;
+    return v.readyState === 0 && v.currentTime > 0;
+  } catch (e) {
+    return false;
+  }
+})()
+"""
+
+
 JS = r"""
 (function () {
+  // Pose avant tout le reste, et sous sa propre garde : ce guet vaut partout,
+  // y compris sur Twitch quand le lecteur du site garde la main et que le
+  // reste du script s'arrete.
+  if (!window.__plume_liens) {
+    window.__plume_liens = 1;
+    var lien_de = function (e) {
+      var c = e.target;
+      while (c && c !== document) {
+        if (c.tagName === "A" && c.getAttribute("href")) return c;
+        c = c.parentNode || (c.getRootNode && c.getRootNode().host);
+      }
+      return null;
+    };
+    var derriere = function (e) {
+      if (e.button !== 1 && !(e.button === 0 && (e.ctrlKey || e.metaKey)))
+        return;
+      var a = lien_de(e);
+      if (!a || !/^https?:/i.test(a.href || "")) return;
+      // La page ne doit pas voir passer le geste : certains sites ouvrent
+      // l'onglet eux-memes, et il s'en ouvrirait deux.
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.type === "mousedown") return;   // on attend le clic pour ouvrir
+      try {
+        window.chrome.webview.postMessage(JSON.stringify(
+          { type: "onglet_derriere", url: a.href }));
+      } catch (err) {}
+    };
+    addEventListener("mousedown", derriere, true);
+    addEventListener("auxclick", derriere, true);
+    addEventListener("click", derriere, true);
+  }
   if (window.__plume) return;
   // Choix de l'utilisateur, garde par le site lui-meme : une seule source de
   // verite, et la preference suit naturellement le domaine. Sur Twitch, le
@@ -1188,6 +1278,23 @@ FONDU_BULLE = 180
 PAS_FONDU = 15
 
 
+def _ouverture_en_arriere_plan():
+    """Vrai si le geste demande un onglet derriere : molette, ou Ctrl+clic.
+
+    WebView2 ne dit pas quel geste a ouvert la fenetre : on interroge l'etat
+    des touches. Le bit de poids faible retenu par Windows dit « pressee
+    depuis la derniere question », ce qui rattrape un clic du milieu deja
+    relache quand l'evenement nous parvient ; personne d'autre dans Plume
+    n'interroge ces deux touches, le bit est donc bien a nous.
+    """
+    try:
+        milieu = user32.GetAsyncKeyState(0x04)      # bouton du milieu
+        ctrl = user32.GetAsyncKeyState(0x11)
+        return bool(milieu & 0x8001) or bool(ctrl & 0x8000)
+    except Exception:
+        return False
+
+
 class Onglet(object):
     """Un onglet : sa vue WebView2, son favicon, et sa vignette dessinee."""
 
@@ -1212,6 +1319,10 @@ class Onglet(object):
         self.survole = False
         self.survol_croix = False
         self.endormi = False
+        # Vrai quand la memoire de la page est repartie a Windows : ce qui
+        # peut laisser son lecteur video hors d'etat de repartir.
+        self._memoire_rendue = False
+        self._debut_veille = 0.0
         self.derniere_activite = time.time()
         # Part de sa largeur finale, de 0 a 1. L'onglet s'ouvre en s'ecartant.
         self.echelle = 1.0
@@ -1328,8 +1439,13 @@ class Onglet(object):
                 self.nav.rafraichir_onglets()
                 return
             # A demander avant : une fois suspendu, plus rien ne repond.
+            # La memoire retourne a Windows : c'est la ou la veille gagne
+            # vraiment. Le lecteur video n'y survit pas toujours ; c'est le
+            # reveil qui s'en apercoit et recharge la page.
             noyau.MemoryUsageTargetLevel = (
                 CoreWebView2MemoryUsageTargetLevel.Low)
+            self._memoire_rendue = True
+            self._debut_veille = time.time()
             tache = noyau.TrySuspendAsync()
         except Exception as e:
             journal("veille : refus pour %s : %r" % (self.url, e))
@@ -1353,21 +1469,53 @@ class Onglet(object):
         except Exception as e:
             journal("veille : suite refusee : %r" % (e,))
 
+    def joue_du_son(self):
+        """Vrai si la page fait du bruit : video, musique, appel.
+
+        WebView2 le sait pour toute la page, lecteur du site compris. Depuis
+        que YouTube garde son lecteur, c'est la seule facon de distinguer un
+        onglet qu'on ecoute d'un onglet oublie.
+        """
+        try:
+            noyau = self.vue.CoreWebView2
+            return bool(noyau is not None and noyau.IsDocumentPlayingAudio)
+        except Exception:
+            return False
+
     def reveiller(self):
-        """Rend l'onglet a la vie : il etait gele, pas ferme, rien a recharger."""
+        """Rend l'onglet a la vie : il etait gele, pas ferme, rien a recharger.
+
+        Sauf si sa memoire etait repartie a Windows et que la page est une
+        page video : son lecteur en sort parfois hors d'usage, et c'est
+        seulement ici qu'on peut le rattraper.
+        """
         self.derniere_activite = time.time()
         if not self.endormi:
             return
         self.endormi = False
+        rendue, self._memoire_rendue = self._memoire_rendue, False
+        dormi = time.time() - (self._debut_veille or time.time())
         try:
             noyau = self.vue.CoreWebView2
             if noyau is not None:
                 noyau.Resume()
                 noyau.MemoryUsageTargetLevel = (
                     CoreWebView2MemoryUsageTargetLevel.Normal)
-            journal("veille : %s reveille" % str(self.url)[:70])
+            journal("veille : %s reveille apres %.0f s"
+                    % (str(self.url)[:70], dormi))
         except Exception as e:
             journal("veille : reveil impossible : %r" % (e,))
+            return
+        if not rendue or not core.est_video(self.url or ""):
+            return
+        if dormi >= VEILLE_LONGUE:
+            # Trop longtemps sans memoire : le lecteur ne s'en remet
+            # generalement pas, et attendre le premier clic pour s'en
+            # apercevoir ferait deux attentes au lieu d'une.
+            journal("veille : rechargement apres %.0f s sans memoire" % dormi)
+            self.nav.recharger_onglet(self)
+            return
+        self.nav.verifier_lecteur(self)
 
     def au_action_lecteur(self, nom, valeur):
         """Ce que la barre de mpv demande a la page.
@@ -1586,9 +1734,10 @@ class Onglet(object):
             if not args.IsUserInitiated:
                 journal("popup de script refusee : %s" % str(args.Uri)[:90])
                 return
-            journal("nouvel onglet demande par la page : %s"
-                    % str(args.Uri)[:90])
-            self.nav.nouvel_onglet(str(args.Uri))
+            derriere = _ouverture_en_arriere_plan()
+            journal("nouvel onglet demande par la page : %s%s"
+                    % (str(args.Uri)[:90], " (derriere)" if derriere else ""))
+            self.nav.nouvel_onglet(str(args.Uri), arriere_plan=derriere)
         except Exception as e:
             journal("nouvelle fenetre : %s" % e)
 
@@ -1737,6 +1886,7 @@ class Navigateur(Form):
         self._rect_roue = Rectangle(0, 0, 0, 0)
         self._survol_roue = False
         self._anim_fenetre = None   # minuteur d'apparition et d'effacement
+        self._horloge_fine = False  # horloge a la milliseconde demandee
         self._ferme_pour_de_bon = False
         self._items_menu = []
         self._survol_menu = -1
@@ -2037,7 +2187,7 @@ class Navigateur(Form):
                 return
             url = self.favoris["elements"][i]["url"]
             if args.Button == MouseButtons.Middle:
-                self.nouvel_onglet(url)
+                self.nouvel_onglet(url, arriere_plan=True)
             elif croix.Contains(args.Location):
                 del self.favoris["elements"][i]
                 self._survol_favori = None
@@ -3715,7 +3865,12 @@ class Navigateur(Form):
                 continue
         core.enregistrer_session({"fenetres": fenetres})
 
-    def nouvel_onglet(self, url=None):
+    def nouvel_onglet(self, url=None, arriere_plan=False):
+        """Ouvre un onglet. `arriere_plan` le pose sans quitter la page.
+
+        C'est ce que fait le clic du milieu sur un lien : on continue de lire,
+        l'onglet attend son tour.
+        """
         url = url or ACCUEIL
         journal("onglet ouvert : %s" % str(url)[:90])
         if url == ACCUEIL:
@@ -3729,6 +3884,17 @@ class Navigateur(Form):
             onglet._ouverture = time.time()
             self.animer()
         self.onglets.append(onglet)
+        if arriere_plan and self.actif is not None:
+            # La vue nait par-dessus la page : sans cela, l'onglet ouvert
+            # derriere masquerait celle qu'on est en train de lire.
+            try:
+                onglet.vue.Visible = False
+                self.actif.vue.BringToFront()
+            except Exception as e:
+                journal("onglet derriere : %r" % (e,))
+            self.rafraichir_onglets()
+            self.enregistrer_session(force=True)
+            return onglet
         # Un onglet neuf se pose toujours a droite : sa page arrive donc du
         # meme cote que si on l'avait choisi dans la barre. Pas pendant une
         # reprise de session, ou vingt pages defileraient au lancement.
@@ -4482,6 +4648,15 @@ class Navigateur(Form):
         """Reveille le minuteur d'animation, s'il dort."""
         if self.minuteur_anim is not None:
             return
+        # Au repos, Windows reveille les minuteurs toutes les 15,6 ms : un
+        # minuteur de 16 ms sautait donc une image sur deux, ce qui se voit
+        # comme une saccade. On demande la milliseconde, et on la rend des
+        # que l'animation est finie : la garder couterait de la batterie.
+        try:
+            winmm.timeBeginPeriod(1)
+            self._horloge_fine = True
+        except Exception:
+            self._horloge_fine = False
         self.minuteur_anim = Timer()
         self.minuteur_anim.Interval = PERIODE_ANIM
         self.minuteur_anim.Tick += self._battement_anim
@@ -4493,6 +4668,12 @@ class Navigateur(Form):
         self.minuteur_anim.Stop()
         self.minuteur_anim.Dispose()
         self.minuteur_anim = None
+        if getattr(self, "_horloge_fine", False):
+            self._horloge_fine = False
+            try:
+                winmm.timeEndPeriod(1)
+            except Exception:
+                pass
 
     def _battement_anim(self, envoyeur=None, args=None):
         # Une exception dans un Tick remonte dans WinForms et tue le processus.
@@ -4517,9 +4698,11 @@ class Navigateur(Form):
         """
         maintenant = time.time()
         encore = False
+        barre = False      # la barre d'onglets a-t-elle bouge ?
         for onglet in self.onglets:
             if onglet._ouverture is None:
                 continue
+            barre = True
             part = (maintenant - onglet._ouverture) / DUREE_OUVERTURE
             if part >= 1.0:
                 onglet.echelle = 1.0
@@ -4529,6 +4712,7 @@ class Navigateur(Form):
                 onglet.echelle = 1.0 - (1.0 - part) ** 3
                 encore = True
         for fantome in list(self._fantomes):
+            barre = True
             part = (maintenant - fantome["debut"]) / DUREE_FERMETURE
             if part >= 1.0:
                 self._fantomes.remove(fantome)
@@ -4540,7 +4724,12 @@ class Navigateur(Form):
             encore = True
         if self._avancer_chute(maintenant):
             encore = True
-        self.barre_onglets.Invalidate()
+        # Repeindre la barre a chaque image alors que seules les PAGES
+        # glissent, c'est un dessin complet de la barre soixante fois par
+        # seconde pour rien : autant de travail vole a l'animation, et la
+        # saccade qui va avec.
+        if barre:
+            self.barre_onglets.Invalidate()
         if not encore:
             self._arreter_anim()
 
@@ -4558,9 +4747,9 @@ class Navigateur(Form):
     def verifier_veille(self, envoyeur=None, args=None):
         """Endort ce qui dort deja de fait.
 
-        Deux onglets sont epargnes : celui qu'on regarde, et celui qui joue une
-        video. Le delai laisse un aller-retour rapide entre deux onglets sans
-        aucun cout.
+        Trois onglets sont epargnes : celui qu'on regarde, celui dont le
+        lecteur tourne, et celui qui joue du son. Le delai laisse un
+        aller-retour rapide entre deux onglets sans aucun cout.
         """
         delai = core.CONFIG.get("veille_onglets") or 0
         if delai <= 0:
@@ -4577,6 +4766,12 @@ class Navigateur(Form):
                     continue
             except Exception:
                 pass
+            if onglet.joue_du_son():
+                # Endormir une page qui joue coupe le son net. Le compteur
+                # repart : le silence revenu, l'onglet a de nouveau son delai
+                # entier avant de s'endormir.
+                onglet.derniere_activite = maintenant
+                continue
             journal("veille : tentative sur %s (inactif depuis %.0f s)"
                     % (str(onglet.url)[:60], age))
             onglet.endormir()
@@ -5047,12 +5242,92 @@ class Navigateur(Form):
         except Exception:
             pass
 
-    def recharger(self):
+    def recharger_onglet(self, onglet):
+        """Renavigue un onglet vers son adresse : un document tout neuf.
+
+        `Reload` rejouerait le meme document, avec le lecteur casse qu'il
+        contient. Renaviguer revient a rouvrir l'adresse dans un onglet neuf,
+        ce qui etait le seul remede connu.
+        """
         try:
-            if self.actif:
-                self.actif.vue.CoreWebView2.Reload()
-        except Exception:
-            pass
+            noyau = onglet.vue.CoreWebView2
+            adresse = onglet.url or ""
+            if noyau is None or not adresse.startswith("http"):
+                return
+            noyau.Navigate(adresse)
+        except Exception as e:
+            journal("rechargement : %r" % (e,))
+
+    def verifier_lecteur(self, onglet):
+        """Regarde, un instant plus tard, si le lecteur de la page va bien.
+
+        Une page qui vient de retrouver sa memoire a besoin de quelques
+        centaines de millisecondes pour se remettre en route : la questionner
+        tout de suite ne dirait rien.
+        """
+        minuteur = Timer()
+        minuteur.Interval = DELAI_EXAMEN_LECTEUR
+
+        def examiner(envoyeur=None, args=None):
+            minuteur.Stop()
+            minuteur.Dispose()
+            if onglet not in self.onglets or onglet.endormi:
+                return
+            try:
+                noyau = onglet.vue.CoreWebView2
+                if noyau is None:
+                    return
+                tache = noyau.ExecuteScriptAsync(JS_LECTEUR_CASSE)
+            except Exception as e:
+                journal("examen du lecteur : %r" % (e,))
+                return
+
+            def repondre(terminee):
+                try:
+                    casse = str(terminee.Result or "").strip() == "true"
+                except Exception:
+                    return
+                if not casse:
+                    return
+                journal("lecteur casse apres la veille : %s"
+                        % str(onglet.url)[:70])
+                try:
+                    self.Invoke(Action(
+                        lambda: self.recharger_onglet(onglet)))
+                except Exception as e:
+                    journal("rechargement apres veille : %r" % (e,))
+
+            try:
+                tache.ContinueWith(Action[Task](repondre))
+            except Exception as e:
+                journal("examen du lecteur : suite refusee : %r" % (e,))
+
+        minuteur.Tick += examiner
+        minuteur.Start()
+
+    def recharger(self):
+        """Recharge la page active, pour de bon.
+
+        `Reload` rejoue le meme document. Apres une longue veille, un lecteur
+        video casse le restait donc, et le bouton n'y changeait rien : il
+        fallait rouvrir l'adresse dans un onglet neuf. On renavigue vers
+        l'adresse, ce qui revient au meme sans changer d'onglet.
+        """
+        onglet = self.actif
+        if onglet is None:
+            return
+        onglet.reveiller()      # recharger un onglet gele ne ferait rien
+        try:
+            noyau = onglet.vue.CoreWebView2
+            if noyau is None:
+                return
+            adresse = onglet.url or ""
+            if adresse.startswith("http"):
+                noyau.Navigate(adresse)
+            else:
+                noyau.Reload()      # la page d'accueil est un fichier a nous
+        except Exception as e:
+            journal("rechargement : %r" % (e,))
 
     # ------------------------------------------------------------------
     # Clavier
@@ -5190,6 +5465,14 @@ class Navigateur(Form):
             # Une pub retiree de la reponse du lecteur, ou sautee au vol :
             # elle compte avec les requetes refusees sur la page d'accueil.
             self.pubs_bloquees += 1
+            return
+        if genre == "onglet_derriere":
+            # Clic de la molette, ou Ctrl+clic : la page a retenu le geste et
+            # nous passe l'adresse. L'onglet se pose derriere, on reste ou
+            # l'on est.
+            adresse = str(message.get("url") or "")
+            if adresse.startswith("http"):
+                self.nouvel_onglet(adresse, arriere_plan=True)
             return
         if genre == "reglage":
             # Demande venue de la page d'accueil, qui est un fichier local a
@@ -6125,6 +6408,14 @@ class Navigateur(Form):
                 lien.close()
                 cible = DERNIERE[0] or self
                 journal("canal local : %r" % donnees[:90])
+                # Un lien clique ailleurs doit se voir : Plume revient
+                # devant, meme reduite dans la barre des taches.
+                if donnees and not donnees.startswith("js:"):
+                    try:
+                        cible.Invoke(Action(
+                            lambda f=cible: ramener_devant(f)))
+                    except Exception as e:
+                        journal("premier plan : %r" % (e,))
                 if donnees == "fenetre:":
                     cible.Invoke(Action(cible.nouvelle_fenetre))
                 elif donnees == "privee:":
