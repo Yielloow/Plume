@@ -29,6 +29,7 @@ import time
 from ctypes import wintypes
 
 import core
+import interface as ui
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
@@ -173,6 +174,20 @@ def _interdire_activation(fenetre, interdite=True):
         return False
 
 
+def _couleurs_du_theme():
+    """Les couleurs a transmettre a osc.lua, en « rrggbb » sans diese.
+
+    Une option par couleur : `--script-opts-append` ne prend qu'une paire a
+    la fois, une liste separee par des virgules partirait entiere dans la
+    valeur de la premiere cle.
+    """
+    palette = (("accent", ui.ACCENT), ("accent2", ui.ACCENT_PALE),
+               ("fond", ui.FOND_ONGLETS), ("surface", ui.FOND_NAV),
+               ("survol", ui.ONGLET_ACTIF))
+    return ["--script-opts-append=plume-%s=%02x%02x%02x"
+            % (nom, c.R, c.G, c.B) for nom, c in palette]
+
+
 class Incrustation:
     """Pilote un mpv sans bordure, colle sur la zone du lecteur de la page."""
 
@@ -191,6 +206,7 @@ class Incrustation:
         self.url = None
         self.plein_ecran = False
         self.tuyau = None            # chemin du tube IPC
+        self._tube = None            # le tube ouvert, quand mpv ecoute
         self._visible = False
         self._zone = None
         # Nul ne se montre sans y avoir ete autorise. Faux au depart : c'est
@@ -293,6 +309,9 @@ class Incrustation:
             % int(core.CONFIG.get("qualite_max", 1080)),
             "--script-opts-append=plume-fps=%d"
             % int(core.CONFIG.get("fps_max", 60)),
+            # La palette suit le theme choisi : sans cela, la barre du
+            # lecteur restait violette dans un navigateur devenu vert.
+            ] + _couleurs_du_theme() + [
             # Sans cela, glisser la video deplace la fenetre de mpv, qui se
             # decolle de la page : le lecteur part tout seul sur le cote.
             "--input-builtin-dragging=no",
@@ -641,6 +660,7 @@ class Incrustation:
                 time.sleep(0.25)
         if not tube:
             return
+        self._tube = tube
         try:
             tube.write(b'{"command":["observe_property",1,"fullscreen"]}\n')
             tube.write(b'{"command":["observe_property",2,'
@@ -662,10 +682,28 @@ class Incrustation:
         except OSError:
             pass
         finally:
+            self._tube = None
             try:
                 tube.close()
             except Exception:
                 pass
+
+    def definir_couleurs(self):
+        """Envoie la palette du moment au lecteur deja ouvert.
+
+        Sans cela, une video en cours gardait la barre de l'ancien theme
+        jusqu'a la suivante. Silencieux si mpv n'ecoute pas : le prochain
+        lancement prendra les couleurs par la ligne de commande.
+        """
+        tube = self._tube
+        if tube is None:
+            return
+        couleurs = [c.split("=", 1)[1] for c in _couleurs_du_theme()]
+        ordre = {"command": ["script-message", "plume-couleurs"] + couleurs}
+        try:
+            tube.write((json.dumps(ordre) + "\n").encode("utf-8"))
+        except Exception as e:
+            _trace("couleurs : %r" % (e,))
 
     def _transmettre(self, brut):
         """Passe a Plume ce que la barre du lecteur demande a la page.

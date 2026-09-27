@@ -25,6 +25,14 @@ local reglages = {
     qualite = 1080,
     toujours = false,    -- ne jamais masquer la barre : mise au point du rendu
     langue = "fr",       -- celle de Plume, transmise au lancement
+    -- La palette de Plume, transmise elle aussi : le theme est au choix de
+    -- qui regarde, et la barre du lecteur doit le suivre. Ecrites en
+    -- « rrggbb », comme partout ailleurs dans Plume.
+    accent = "7c5cff",
+    accent2 = "a78bfa",
+    fond = "1c1b22",
+    surface = "2b2a33",
+    survol = "42414d",
 }
 opts.read_options(reglages, "plume")
 
@@ -61,17 +69,29 @@ end
 -- Palette, reprise de interface.py. En ASS une couleur s'ecrit a l'envers,
 -- bleu-vert-rouge, d'ou les valeurs qui semblent permutees.
 -- --------------------------------------------------------------------------
+-- Une couleur de Plume, « rrggbb », devient une couleur ASS, qui s'ecrit a
+-- l'envers : bleu, vert, rouge. Une valeur incomprise rend le repli, pour
+-- qu'une option mal transmise n'efface pas la barre.
+local function ass_couleur(rrggbb, repli)
+    local texte = tostring(rrggbb or ""):gsub("#", "")
+    if not texte:match("^%x%x%x%x%x%x$") then
+        texte = repli
+    end
+    return "&H" .. texte:sub(5, 6) .. texte:sub(3, 4) .. texte:sub(1, 2)
+        .. "&"
+end
+
 local C = {
     texte    = "&HFEFBFB&",   -- 251,251,254
     -- Plus clair que le TEXTE2 de interface.py (177,177,189) : sur une image
     -- claire, mesure au bas d'une video, ce gris tombait a 2,8 pour 1 de
     -- contraste, en dessous du seuil lisible. Ici 214,214,224.
     faible   = "&HE0D6D6&",
-    accent   = "&HFF5C7C&",   -- 124,92,255
-    accent2  = "&HFA8BA7&",   -- 167,139,250
-    fond     = "&H221B1C&",   -- 28,27,34
-    surface  = "&H332A2B&",   -- 43,42,51
-    survol   = "&H4D4142&",   -- 66,65,77
+    accent   = ass_couleur(reglages.accent, "7c5cff"),
+    accent2  = ass_couleur(reglages.accent2, "a78bfa"),
+    fond     = ass_couleur(reglages.fond, "1c1b22"),
+    surface  = ass_couleur(reglages.surface, "2b2a33"),
+    survol   = ass_couleur(reglages.survol, "42414d"),
     blanc    = "&HFFFFFF&",
     noir     = "&H000000&",
 }
@@ -495,7 +515,9 @@ local function bouton(g, role, x, dessiner, largeur)
     local z = {role = role, x = x, y = g.boutons_y - g.icone,
                l = l, h = g.icone * 2}
     local actif = dans(vue.souris_x, vue.souris_y, z) and vue.visible
-    dessiner(x + l / 2, actif and C.texte or C.faible)
+    -- Survole, un bouton prend la couleur du theme : c'est la que le regard
+    -- est, et cela donne au lecteur la couleur choisie dans Plume.
+    dessiner(x + l / 2, actif and C.accent2 or C.faible)
     vue.zones[#vue.zones + 1] = z
     return x + l
 end
@@ -523,10 +545,12 @@ local function rendre_boutons(g)
         trace_rect(d, vx, vy - vh / 2, vl, vh, vh / 2)
     end)
     local part = etat.muet and 0 or borner(etat.volume / 100, 0, 1)
-    forme(C.texte, 0, function(d)
+    -- La couleur du theme, comme la ligne de temps : deux reperes colores
+    -- valent mieux qu'un seul, la barre etant posee sur une image mouvante.
+    forme(C.accent2, 0, function(d)
         trace_rect(d, vx, vy - vh / 2, vl * part, vh, vh / 2)
     end)
-    forme(C.texte, 0, function(d)
+    forme(C.accent2, 0, function(d)
         trace_disque(d, vx + vl * part, vy, 5.5 * g.e)
     end)
     vue.zones[#vue.zones + 1] = {role = "volume", x = vx - 6 * g.e,
@@ -1049,6 +1073,18 @@ mp.add_forced_key_binding("wheel_down", "plume_molette_b",
 -- seul moyen fiable de juger le rendu : une capture d'ecran compose mal les
 -- surfaces de mpv et de WebView2, on s'y est deja laisse prendre deux fois.
 -- Voir outils/apercu_barre.py.
+-- Plume a change de theme pendant la lecture : la barre se repeint sans
+-- attendre la video suivante.
+mp.register_script_message("plume-couleurs",
+                           function(accent, accent2, fond, surface, survol)
+    C.accent = ass_couleur(accent, "7c5cff")
+    C.accent2 = ass_couleur(accent2, "a78bfa")
+    C.fond = ass_couleur(fond, "1c1b22")
+    C.surface = ass_couleur(surface, "2b2a33")
+    C.survol = ass_couleur(survol, "42414d")
+    rendre()
+end)
+
 mp.register_script_message("plume-test", function(action, a, b, c)
     if action == "souris" then
         vue.souris_x = tonumber(a) or -1

@@ -4140,6 +4140,13 @@ class Navigateur(Form):
                 onglet.vue.DefaultBackgroundColor = ui.FOND_PAGE
             except Exception:
                 pass
+            # Le lecteur est un autre processus : la palette lui est envoyee
+            # par le tube, sans quoi une video en cours garderait l'ancienne
+            # barre jusqu'a la suivante.
+            try:
+                onglet.incrustation.definir_couleurs()
+            except Exception as e:
+                journal("couleurs du lecteur : %r" % (e,))
         # Les deux pages locales portent la palette dans leur style : elles se
         # reecrivent, et les onglets qui les montrent se rechargent.
         self.ecrire_accueil()
