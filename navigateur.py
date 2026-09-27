@@ -114,6 +114,8 @@ PORT = 47821                       # canal local pour recevoir de nouveaux ongle
 # C'est aussi ce qui permet a la barre d'adresse de garder le focus a
 # l'ouverture d'un onglet, une page web le lui prenant des qu'elle a charge.
 ACCUEIL = core.FICHIER_ACCUEIL.as_uri()
+# La page des parametres, locale elle aussi : elle n'existe que sur ce poste.
+PARAMETRES = core.FICHIER_REGLAGES.as_uri()
 
 # origine des horodatages Unix, pour convertir les dates des cookies
 EPOCH = DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)
@@ -295,6 +297,67 @@ def borner(valeur, mini, maxi):
     return max(mini, min(valeur, maxi)) if maxi >= mini else mini
 
 
+# L'icone dessinee de la fenetre, et la poignee Windows qui va avec :
+# gardees pour etre detruites quand la couleur change, sans quoi chaque
+# changement laisserait une poignee derriere lui.
+_ICONE_DESSINEE = [None, None, None]     # couleur, Icon, poignee
+
+
+def icone_de_fenetre():
+    """L'icone de Plume dans la couleur du moment, fabriquee une seule fois."""
+    couleur = ui.accent_courant()
+    if _ICONE_DESSINEE[0] == couleur and _ICONE_DESSINEE[1] is not None:
+        return _ICONE_DESSINEE[1]
+    ancienne, poignee = _ICONE_DESSINEE[1], _ICONE_DESSINEE[2]
+    try:
+        taille = 64
+        image = Bitmap(taille, taille)
+        g = Graphics.FromImage(image)
+        try:
+            ui.dessiner_marque(g, taille)
+        finally:
+            g.Dispose()
+        neuve = image.GetHicon()
+        _ICONE_DESSINEE[0] = couleur
+        _ICONE_DESSINEE[1] = Icon.FromHandle(neuve).Clone()
+        _ICONE_DESSINEE[2] = neuve
+        image.Dispose()
+    except Exception as e:
+        journal("icone : %r" % (e,))
+        return None
+    # L'ancienne n'a plus de fenetre qui la porte : Windows ne libere pas
+    # tout seul une poignee d'icone fabriquee par GetHicon.
+    try:
+        if ancienne is not None:
+            ancienne.Dispose()
+        if poignee:
+            user32.DestroyIcon(ctypes.c_void_p(int(poignee)))
+    except Exception:
+        pass
+    return _ICONE_DESSINEE[1]
+
+
+def _palette_des_pages():
+    """Les couleurs a poser dans une page locale, telles qu'elles sont.
+
+    Les pages de Plume, accueil et parametres, portent la meme palette que la
+    fenetre : sans cela, choisir une couleur laissait le navigateur d'un cote
+    et ses pages de l'autre.
+    """
+    return {"accent": ui.accent_courant(),
+            "pale": ui.ecrire_couleur(ui.ACCENT_PALE),
+            "fond": ui.ecrire_couleur(ui.FOND_PAGE),
+            "carte": ui.ecrire_couleur(ui.FOND_ONGLETS),
+            "carte2": ui.ecrire_couleur(ui.FOND_NAV),
+            "bord": ui.ecrire_couleur(ui.CHAMP_BORD),
+            "bord2": ui.ecrire_couleur(ui.FOND_NAV),
+            "survol": ui.ecrire_couleur(ui.ONGLET_SURVOL),
+            "survol2": ui.ecrire_couleur(ui.CROIX_SURVOL),
+            "texte": ui.ecrire_couleur(ui.TEXTE),
+            "texte2": ui.ecrire_couleur(ui.TEXTE2),
+            "texte3": ui.ecrire_couleur(ui.TEXTE3)}
+
+
 def _echapper(texte):
     return (str(texte).replace("&", "&amp;").replace("<", "&lt;")
             .replace(">", "&gt;").replace('"', "&quot;"))
@@ -318,86 +381,396 @@ def _echapper_js(texte):
             .replace('"', "&quot;"))
 
 
+MODELE_PARAMETRES = """<!doctype html>
+<html lang="%(langue_page)s"><head><meta charset="utf-8">
+<title>%(titre)s</title>
+<style>
+ :root { color-scheme: dark; --accent:%(accent)s; --pale:%(pale)s;
+         --fond:%(fond)s; --carte:%(carte)s; --carte2:%(carte2)s;
+         --bord:%(bord)s; --texte:%(texte)s; --texte2:%(texte2)s;
+         --texte3:%(texte3)s; }
+ * { box-sizing: border-box; }
+ body { margin:0; background:var(--fond); color:var(--texte);
+        font:15px "Segoe UI",system-ui,sans-serif; }
+ .page { max-width:940px; margin:0 auto; padding:48px 24px 90px;
+         display:grid; grid-template-columns:190px 1fr; gap:38px; }
+ header { grid-column:1 / -1; display:flex; align-items:center; gap:12px;
+          margin-bottom:10px; }
+ header h1 { margin:0; font-size:30px; font-weight:600; letter-spacing:-0.4px; }
+ nav { position:sticky; top:48px; align-self:start; display:flex;
+       flex-direction:column; gap:2px; }
+ nav a { color:var(--texte2); text-decoration:none; padding:9px 12px;
+         border-radius:9px; font-size:14px; }
+ nav a:hover { background:var(--carte); color:var(--texte); }
+ section { margin-bottom:34px; }
+ h2 { font-size:12px; letter-spacing:1.4px; text-transform:uppercase;
+      color:var(--texte3); margin:0 0 12px; font-weight:600; }
+ .carte { background:var(--carte); border:1px solid var(--bord);
+          border-radius:13px; overflow:hidden; }
+ .ligne { display:flex; align-items:center; gap:16px; padding:15px 18px;
+          border-top:1px solid var(--bord); }
+ .ligne:first-child { border-top:0; }
+ .ligne .texte { flex:1; min-width:0; }
+ .ligne .nom { font-size:14px; }
+ .ligne .aide { color:var(--texte3); font-size:12.5px; margin-top:3px;
+                line-height:1.45; }
+ select { background:var(--carte2); color:var(--texte); font:inherit;
+          font-size:13.5px; border:1px solid var(--bord); border-radius:9px;
+          padding:7px 10px; outline:none; }
+ select:focus { border-color:var(--accent); }
+ .bouton { background:var(--carte2); color:var(--texte); font:inherit;
+           font-size:13.5px; border:1px solid var(--bord); border-radius:9px;
+           padding:8px 15px; cursor:pointer; }
+ .bouton:hover { border-color:var(--accent); }
+ .bouton.plein { background:var(--accent); border-color:var(--accent);
+                 color:#fff; }
+ .pilules { display:flex; gap:6px; }
+ .pilule { background:var(--carte2); color:var(--texte2); border:0;
+           border-radius:9px; padding:8px 14px; font:inherit; font-size:13px;
+           cursor:pointer; }
+ .pilule.prise { background:var(--accent); color:#fff; }
+ .bascule { width:44px; height:24px; border-radius:12px; border:0;
+            background:var(--carte2); position:relative; cursor:pointer;
+            flex:none; transition:background .16s; }
+ .bascule .rond { position:absolute; top:3px; left:3px; width:18px;
+                  height:18px; border-radius:50%%; background:var(--texte2);
+                  transition:left .16s, background .16s; }
+ .bascule.oui { background:var(--accent); }
+ .bascule.oui .rond { left:23px; background:#fff; }
+ .module .tete { display:flex; align-items:center; gap:12px; }
+ .etat { font-size:12px; color:var(--texte3); }
+ .sous { padding:0 18px 15px 18px; display:flex; align-items:center;
+         gap:12px; color:var(--texte2); font-size:13px; }
+ .sous.absent { display:none; }
+ /* L'apercu : une fenetre de Plume en miniature, qui prend la couleur
+    choisie avant meme qu'on l'applique. Les surfaces se teintent comme dans
+    le navigateur, une pointe d'accent sur un gris. */
+ .apercu { margin:16px 0 4px; border-radius:11px; overflow:hidden;
+           border:1px solid var(--bord);
+           background:color-mix(in srgb, var(--accent) 4%%, #0e1010); }
+ .ap-onglets { display:flex; gap:3px; padding:5px 6px 0;
+               background:color-mix(in srgb, var(--accent) 5%%, #171816); }
+ .ap-onglet { display:flex; align-items:center; gap:7px; height:27px;
+              padding:0 10px; border-radius:7px 7px 0 0; min-width:96px;
+              font-size:11px; color:var(--texte3); }
+ .ap-onglet.actif { background:color-mix(in srgb, var(--accent) 5%%, #272728);
+                    color:var(--texte); }
+ .ap-etoile { width:9px; height:9px; flex:none;
+              background:var(--pale);
+              clip-path:polygon(50%% 0, 58%% 42%%, 100%% 50%%, 58%% 58%%,
+                        50%% 100%%, 42%% 58%%, 0 50%%, 42%% 42%%); }
+ .ap-puce { width:9px; height:9px; border-radius:2px; flex:none;
+            background:var(--texte3); opacity:.6; }
+ .ap-nav { display:flex; align-items:center; gap:8px; padding:8px 10px;
+           background:color-mix(in srgb, var(--accent) 5%%, #272728); }
+ .ap-rond { width:11px; height:11px; border-radius:50%%; flex:none;
+            border:1.4px solid var(--texte3); opacity:.7; }
+ .ap-champ { flex:1; height:17px; border-radius:99px;
+             background:color-mix(in srgb, var(--accent) 5%%, #171816);
+             border:1px solid var(--bord); }
+ .ap-page { padding:18px 12px 20px; text-align:center;
+            font-size:19px; font-weight:600; color:var(--texte); }
+ .ap-page i { color:var(--pale); font-style:normal; }
+ .themes { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+ .theme { display:flex; align-items:center; gap:8px; cursor:pointer;
+          background:var(--carte2); color:var(--texte2); font:inherit;
+          font-size:13px; border:1px solid var(--bord); border-radius:99px;
+          padding:7px 14px 7px 9px; }
+ .theme .rond { width:15px; height:15px; border-radius:50%%; flex:none; }
+ .theme.prise { color:var(--texte); border-color:var(--accent);
+                background:color-mix(in srgb, var(--accent) 16%%,
+                                     var(--carte2)); }
+ .libre { display:flex; align-items:center; gap:12px; margin-top:16px;
+          padding-top:16px; border-top:1px solid var(--bord);
+          flex-wrap:wrap; }
+ .libre .nom-libre { font-size:13px; color:var(--texte2); }
+ .teintier { flex:1; min-width:180px; height:14px; appearance:none;
+             border-radius:99px; outline:none; cursor:pointer;
+             background:linear-gradient(to right, hsl(0,62%%,62%%),
+               hsl(60,62%%,62%%), hsl(120,62%%,62%%), hsl(180,62%%,62%%),
+               hsl(240,62%%,62%%), hsl(300,62%%,62%%), hsl(360,62%%,62%%)); }
+ .teintier::-webkit-slider-thumb { appearance:none; width:20px; height:20px;
+             border-radius:50%%; background:var(--accent);
+             border:2px solid var(--texte); cursor:pointer; }
+ .hexa { width:104px; background:var(--carte2); color:var(--texte);
+         font:inherit; font-size:13px; border:1px solid var(--bord);
+         border-radius:9px; padding:7px 10px; outline:none;
+         text-transform:lowercase; }
+ .hexa:focus { border-color:var(--accent); }
+ .note { color:var(--texte3); font-size:12.5px; margin:10px 2px 0;
+         line-height:1.5; }
+ .apropos { color:var(--texte2); font-size:13.5px; }
+ .apropos b { color:var(--texte); font-weight:600; }
+ .apropos a { color:var(--pale); }
+ @media (max-width:760px) { .page { grid-template-columns:1fr; }
+   nav { position:static; flex-direction:row; flex-wrap:wrap; } }
+</style></head>
+<body>
+<div class="page">
+ <header>
+  <svg viewBox="-1 -1 2 2" width="26" height="26" aria-hidden="true">
+   <path style="fill:var(--pale)" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1
+        Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>
+  <h1>%(titre)s</h1>
+ </header>
+ <nav>
+  <a href="#general">%(nav_general)s</a>
+  <a href="#apparence">%(nav_apparence)s</a>
+  <a href="#modules">%(nav_modules)s</a>
+  <a href="#apropos">%(nav_apropos)s</a>
+ </nav>
+ <main>
+  <section id="general">
+   <h2>%(nav_general)s</h2>
+   <div class="carte">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(langue_nom)s</div></div>
+     <div class="pilules">
+      <button class="pilule%(fr_prise)s" onclick="dire('langue','fr')">FR</button>
+      <button class="pilule%(en_prise)s" onclick="dire('langue','en')">EN</button>
+     </div>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(moteur_nom)s</div></div>
+     <select onchange="dire('moteur_recherche', this.value)">%(moteurs)s</select>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(intro_nom)s</div>
+      <div class="aide">%(intro_aide)s</div></div>
+     %(intro_bascule)s
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(glissement_nom)s</div></div>
+     %(glissement_bascule)s
+    </div>
+    %(ligne_defaut)s
+   </div>
+   <p class="note">%(note_maj)s</p>
+   <div class="carte">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(maj_nom)s</div>
+      <div class="aide">%(maj_aide)s</div></div>
+     <button class="bouton plein" onclick="dire('maj', true)">%(maj_bouton)s</button>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(oubli_nom)s</div>
+      <div class="aide">%(oubli_aide)s</div></div>
+     <button class="bouton" onclick="dire('oublier_maj', true)">%(oubli_bouton)s</button>
+    </div>
+   </div>
+  </section>
+
+  <section id="apparence">
+   <h2>%(nav_apparence)s</h2>
+   <div class="carte">
+    <div class="ligne" style="display:block">
+     <div class="nom">%(theme_nom)s</div>
+     <div class="aide" style="margin-top:4px">%(theme_aide)s</div>
+     <div class="apercu" aria-hidden="true">
+      <div class="ap-onglets">
+       <div class="ap-onglet actif"><span class="ap-etoile"></span>
+        <span>%(apercu_onglet)s</span></div>
+       <div class="ap-onglet"><span class="ap-puce"></span>
+        <span>%(apercu_autre)s</span></div>
+      </div>
+      <div class="ap-nav"><span class="ap-rond"></span>
+       <span class="ap-rond"></span><span class="ap-champ"></span></div>
+      <div class="ap-page">Plume<i>.</i></div>
+     </div>
+     <div class="themes">%(teintes)s</div>
+     <div class="libre">
+      <span class="nom-libre">%(theme_libre)s</span>
+      <input type="range" class="teintier" min="0" max="359"
+             value="%(teinte_depart)s" aria-label="%(theme_libre)s"
+             oninput="parTeinte(this.value, false)"
+             onchange="parTeinte(this.value, true)">
+      <input type="text" class="hexa" id="hexa" value="%(accent)s"
+             maxlength="7" spellcheck="false"
+             onchange="parTexte(this.value)">
+     </div>
+    </div>
+   </div>
+  </section>
+
+  <section id="modules">
+   <h2>%(nav_modules)s</h2>
+   <p class="note" style="margin-top:-4px">%(modules_aide)s</p>
+   %(modules)s
+  </section>
+
+  <section id="apropos">
+   <h2>%(nav_apropos)s</h2>
+   <div class="carte"><div class="ligne"><div class="texte apropos">
+    <div><b>Plume %(version)s</b></div>
+    <div style="margin-top:6px">%(profil_nom)s : %(profil)s</div>
+    <div style="margin-top:6px"><a href="%(site)s">%(site)s</a></div>
+   </div></div></div>
+  </section>
+ </main>
+</div>
+<script>
+ function dire(cle, valeur) {
+   try {
+     window.chrome.webview.postMessage(JSON.stringify(
+       {type: "reglage", cle: cle, valeur: valeur}));
+   } catch (e) {}
+ }
+ function basculer(bouton, cle) {
+   var oui = !bouton.classList.contains("oui");
+   bouton.classList.toggle("oui", oui);
+   var etat = bouton.parentNode.querySelector(".etat");
+   if (etat) etat.textContent = oui ? %(mot_actif)s : %(mot_inactif)s;
+   var sous = bouton.closest(".carte").querySelector(".sous");
+   if (sous) sous.classList.toggle("absent", !oui);
+   dire(cle, oui);
+ }
+ function eclaircir(couleur, part) {
+   // Le meme calcul que dans l'interface : la couleur melangee de blanc.
+   var n = parseInt(couleur.slice(1), 16);
+   var v = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(function (c) {
+     return Math.round(c + (255 - c) * part);
+   });
+   return "#" + v.map(function (c) {
+     return ("0" + c.toString(16)).slice(-2);
+   }).join("");
+ }
+ function montrer(couleur) {
+   // L'apercu et la page prennent la couleur tout de suite : on voit ce
+   // qu'on choisit avant meme que Plume ait repeint ses barres.
+   document.documentElement.style.setProperty("--accent", couleur);
+   document.documentElement.style.setProperty("--pale",
+                                              eclaircir(couleur, 0.34));
+   var hexa = document.getElementById("hexa");
+   if (hexa && document.activeElement !== hexa) hexa.value = couleur;
+   var pris = document.querySelectorAll(".theme.prise");
+   for (var i = 0; i < pris.length; i++) pris[i].classList.remove("prise");
+   var connu = document.querySelector('.theme[data-couleur="' + couleur + '"]');
+   if (connu) connu.classList.add("prise");
+ }
+ function teinte(couleur, bouton) {
+   montrer(couleur);
+   if (bouton) bouton.classList.add("prise");
+   dire("theme", couleur);
+ }
+ function parTeinte(angle, poser) {
+   // Teinte libre : la saturation et la clarte sont fixees pour que toute
+   // couleur reste lisible sur le fond sombre, et distincte du texte.
+   var couleur = hsl(parseInt(angle, 10), 0.62, 0.62);
+   montrer(couleur);
+   // Pendant le glissement on ne fait que montrer ; on ne previent Plume
+   // qu'une fois le doigt leve, sinon la fenetre se repeindrait cent fois.
+   if (poser) dire("theme", couleur);
+ }
+ function parTexte(valeur) {
+   var v = String(valeur || "").trim().toLowerCase();
+   if (v.charAt(0) !== "#") v = "#" + v;
+   if (!/^#[0-9a-f]{6}$/.test(v)) {
+     // Saisie incomprise : on remet celle qui est en vigueur.
+     var actuelle = getComputedStyle(document.documentElement)
+       .getPropertyValue("--accent").trim();
+     document.getElementById("hexa").value = actuelle;
+     return;
+   }
+   teinte(v, null);
+ }
+ function hsl(h, s, l) {
+   var f = function (n) {
+     var k = (n + h / 30) %% 12;
+     var a = s * Math.min(l, 1 - l);
+     var c = l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1)));
+     return ("0" + Math.round(c * 255).toString(16)).slice(-2);
+   };
+   return "#" + f(0) + f(8) + f(4);
+ }
+</script>
+</body></html>
+"""
+
+
 MODELE_ACCUEIL = """<!doctype html>
 <html lang="%(langue_page)s"><head><meta charset="utf-8"><title>Plume</title>
 <style>
- :root { color-scheme: dark; }
+ :root { color-scheme: dark;
+   --accent:%(accent)s; --pale:%(pale)s; --fond:%(fond)s;
+   --carte:%(carte)s; --bord:%(bord)s; --bord2:%(bord2)s;
+   --survol:%(survol)s; --survol2:%(survol2)s;
+   --texte:%(texte)s; --texte2:%(texte2)s; --texte3:%(texte3)s; }
  body { margin:0; min-height:100vh; display:flex; flex-direction:column;
         align-items:center; justify-content:center; gap:26px;
-        background:#12131a; color:#fbfbfe;
+        background:var(--fond); color:var(--texte);
         font:15px "Segoe UI",system-ui,sans-serif; }
  h1 { margin:0; font-size:44px; font-weight:600; letter-spacing:-0.5px; }
- h1 span { color:#a78bfa; }
+ h1 span { color:var(--pale); }
  form { width:min(560px,80vw); display:flex; }
  input { flex:1; padding:13px 18px; border-radius:999px;
-         border:1px solid #3a3944; background:#1c1b22; color:#fbfbfe;
+         border:1px solid var(--bord); background:var(--carte); color:var(--texte);
          font-size:15px; outline:none; }
- input:focus { border-color:#7c5cff; }
+ input:focus { border-color:var(--accent); }
  .tuiles { display:flex; flex-wrap:wrap; gap:10px; justify-content:center;
            width:min(720px,86vw); }
  .tuile { display:flex; align-items:center; gap:9px; padding:9px 14px;
-          border-radius:10px; background:#1c1b22; border:1px solid #2b2a33;
-          color:#d6d6e0; text-decoration:none; font-size:13px; }
- .tuile:hover { background:#35343f; color:#fbfbfe; }
+          border-radius:10px; background:var(--carte); border:1px solid var(--bord2);
+          color:var(--texte2); text-decoration:none; font-size:13px; }
+ .tuile:hover { background:var(--survol); color:var(--texte); }
  .tuile img { width:16px; height:16px; }
- .etoile { color:#a78bfa; }
- .vide { color:#8f8f9e; font-size:13px; }
+ .etoile { color:var(--pale); }
+ .vide { color:var(--texte3); font-size:13px; }
  .travaux { display:flex; flex-wrap:wrap; gap:12px; justify-content:center;
             width:min(760px,88vw); }
- .titre-section { color:#8f8f9e; font-size:12px; letter-spacing:1.4px;
+ .titre-section { color:var(--texte3); font-size:12px; letter-spacing:1.4px;
                   text-transform:uppercase; margin:0 0 -14px; }
  .travail { position:relative; display:flex; align-items:center; gap:11px;
             flex-wrap:wrap;
             padding:13px 42px 13px 16px; border-radius:12px;
-            background:#1c1b22; border:1px solid #2b2a33; cursor:pointer;
-            min-width:168px; text-align:left; color:#d6d6e0;
+            background:var(--carte); border:1px solid var(--bord2); cursor:pointer;
+            min-width:168px; text-align:left; color:var(--texte2);
             font:inherit; font-size:14px; }
- .travail:hover { background:#35343f; color:#fbfbfe; }
+ .travail:hover { background:var(--survol); color:var(--texte); }
  .travail .pastille { width:10px; height:10px; border-radius:50%%;
                       flex:0 0 auto; }
- .travail .compte { color:#8f8f9e; font-size:12px; }
+ .travail .compte { color:var(--texte3); font-size:12px; }
  .travail .retirer { position:absolute; right:8px; top:50%%;
                      transform:translateY(-50%%); width:24px; height:24px;
                      border:0; border-radius:7px; background:transparent;
-                     color:#8f8f9e; font-size:14px; line-height:1;
+                     color:var(--texte3); font-size:14px; line-height:1;
                      cursor:pointer; }
- .travail .retirer:hover { background:#52515f; color:#fbfbfe; }
+ .travail .retirer:hover { background:var(--survol2); color:var(--texte); }
  .travail .pastille { cursor:pointer; }
  .travail .icones { display:flex; align-items:center; margin-left:2px; }
  .travail .icones img { width:16px; height:16px; border-radius:4px;
-                        background:#2b2a33; margin-left:-5px;
-                        border:1.5px solid #1c1b22; }
+                        background:var(--bord2); margin-left:-5px;
+                        border:1.5px solid var(--carte); }
  .travail .icones img:first-child { margin-left:0; }
- .travail .icones .reste { margin-left:4px; font-size:11px; color:#8f8f9e; }
+ .travail .icones .reste { margin-left:4px; font-size:11px; color:var(--texte3); }
  .travail .palette { display:none; width:100%%; gap:6px; margin-top:8px;
-                     padding-top:8px; border-top:1px solid #3a3944;
+                     padding-top:8px; border-top:1px solid var(--bord);
                      align-items:center; }
  .travail.ouverte .palette { display:flex; }
  .palette .teinte { width:18px; height:18px; border-radius:50%%;
                     border:2px solid transparent; cursor:pointer; padding:0; }
- .palette .teinte.prise { border-color:#fbfbfe; }
- .palette .valider { margin-left:auto; background:#7c5cff; color:#fff;
+ .palette .teinte.prise { border-color:var(--texte); }
+ .palette .valider { margin-left:auto; background:var(--accent); color:#fff;
                      border:0; border-radius:6px; width:24px; height:22px;
                      cursor:pointer; font-size:12px; line-height:1; }
- .palette .valider:hover { background:#8f74ff; }
- footer { position:fixed; bottom:26px; text-align:center; color:#8f8f9e;
+ .palette .valider:hover { background:var(--pale); }
+ footer { position:fixed; bottom:26px; text-align:center; color:var(--texte3);
           font-size:12px; line-height:1.7; max-width:min(640px,86vw); }
- footer b { color:#d6d6e0; font-weight:600; }
+ footer b { color:var(--texte2); font-weight:600; }
  .reglages { position:fixed; top:18px; right:20px; display:flex; gap:14px;
-             align-items:center; font-size:12px; color:#8f8f9e; }
+             align-items:center; font-size:12px; color:var(--texte3); }
  .reglages button { background:none; border:1px solid transparent;
-                    color:#8f8f9e; font:inherit; padding:4px 9px;
+                    color:var(--texte3); font:inherit; padding:4px 9px;
                     border-radius:7px; cursor:pointer; }
- .reglages button:hover { color:#fbfbfe; }
+ .reglages button:hover { color:var(--texte); }
  .reglages .defaut { display:inline-flex; align-items:center; gap:7px;
-                     border:1px solid #3a3944; border-radius:999px;
-                     padding:7px 15px 7px 11px; color:#c9c3dd;
-                     background:linear-gradient(180deg,#26252f,#1c1b22);
+                     border:1px solid var(--bord); border-radius:999px;
+                     padding:7px 15px 7px 11px; color:var(--texte2);
+                     background:linear-gradient(180deg,var(--carte),var(--carte));
                      transition:border-color .18s, color .18s, box-shadow .25s,
                                 transform .12s; }
  .reglages .defaut svg { opacity:.65; transition:opacity .18s,
                                                  transform .35s; }
- .reglages .defaut:hover { color:#fbfbfe; border-color:#7c5cff;
+ .reglages .defaut:hover { color:var(--texte); border-color:var(--accent);
                            transform:translateY(-1px);
                            box-shadow:0 4px 18px -6px rgba(124,92,255,.85); }
  .reglages .defaut:hover svg { opacity:1; transform:rotate(90deg) scale(1.1); }
@@ -502,6 +875,9 @@ DUREE_FENETRE_FERME = 0.15   # s, effacement avant fermeture reelle
 # doit etre finie avant qu'on s'impatiente. Au dela de deux dixiemes, elle
 # devient une attente.
 DUREE_GLISSE_PAGE = 0.30
+# Le fond de l'onglet actif voyage exactement le temps de la page : les deux
+# mouvements doivent finir ensemble, sinon l'oeil en voit deux.
+DUREE_BULLE_ONGLET = DUREE_GLISSE_PAGE
 # Une page qui tombe va plus vite qu'une page qui glisse : elle accelere, et
 # une chute qui s'eternise ne ressemble plus a une chute.
 DUREE_CHUTE_PAGE = 0.26   # au-dela, la liste cesse d'aider et encombre
@@ -1336,6 +1712,9 @@ class Onglet(object):
         # « site » quand la page a demande le lecteur d'origine. Le script se
         # tait dans ce cas, donc l'absence de nouvelle vaut « site ».
         self.lecteur_site = False
+        # Identifiant du script qui retire les pubs, rendu par WebView2 :
+        # sans lui, impossible de le retirer quand le module est coupe.
+        self._id_sans_pub = None
         self.rect = Rectangle(0, 0, 0, 0)
 
         self.vue = WebView2()
@@ -1389,8 +1768,10 @@ class Onglet(object):
             noyau = self.vue.CoreWebView2
             noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS)
             # A part de JS, qui se retire quand on choisit le lecteur du site :
-            # c'est justement la que les pubs de YouTube passeraient.
-            noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS_SANS_PUB)
+            # c'est justement la que les pubs de YouTube passeraient. Et a
+            # part aussi parce que c'est un module : il se coupe.
+            if core.module_actif("ext_sans_pub"):
+                self.poser_sans_pub(noyau)
             noyau.WebMessageReceived += self.au_message
             noyau.NewWindowRequested += self.au_nouvelle_fenetre
             noyau.NavigationStarting += self.au_depart_navigation
@@ -1588,8 +1969,42 @@ class Onglet(object):
         except Exception as e:
             journal("action lecteur : renvoi impossible : %s" % e)
 
+    def poser_sans_pub(self, noyau=None):
+        """Injecte le retrait des pubs, et retient son identifiant.
+
+        WebView2 rend un identifiant : c'est la seule prise qu'on ait pour
+        retirer le script si le module est coupe.
+        """
+        try:
+            noyau = noyau if noyau is not None else self.vue.CoreWebView2
+            if noyau is None or self._id_sans_pub is not None:
+                return
+            tache = noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS_SANS_PUB)
+
+            def retenir(terminee):
+                try:
+                    self._id_sans_pub = terminee.Result
+                except Exception:
+                    pass
+
+            tache.ContinueWith(Action[Task](retenir))
+        except Exception as e:
+            journal("module sans pub : %r" % (e,))
+
+    def retirer_sans_pub(self):
+        """Retire le script des pages a venir. Celles deja ouvertes l'ont deja."""
+        ident, self._id_sans_pub = self._id_sans_pub, None
+        try:
+            noyau = self.vue.CoreWebView2
+            if noyau is not None and ident:
+                noyau.RemoveScriptToExecuteOnDocumentCreated(ident)
+        except Exception as e:
+            journal("module sans pub : %r" % (e,))
+
     def au_requete(self, envoyeur, args):
         """Refuse les requetes publicitaires, sans meme les emettre."""
+        if not core.module_actif("ext_sans_pub"):
+            return          # module coupe : la requete suit son cours
         try:
             noyau = self.vue.CoreWebView2
             args.Response = noyau.Environment.CreateWebResourceResponse(
@@ -1808,7 +2223,12 @@ class Navigateur(Form):
         # la maximisation attend au_demarrage : il faut d'abord borner la zone,
         # sinon une fenetre sans bordure recouvre la barre des taches
         try:
-            if core.ICONE.exists():
+            # Dessinee plutot que lue : elle porte la couleur choisie. Le
+            # fichier .ico reste le recours si le dessin echoue.
+            dessinee = icone_de_fenetre()
+            if dessinee is not None:
+                self.Icon = dessinee
+            elif core.ICONE.exists():
                 self.Icon = Icon(str(core.ICONE))
         except Exception:
             pass
@@ -1864,6 +2284,9 @@ class Navigateur(Form):
         self.minuteur_anim = None
         self._fantomes = []       # onglets fermes, le temps de se retirer
         self._glisse_page = None  # glissement de page en cours, s'il y en a
+        # Le fond de l'onglet actif, quand il voyage d'un onglet a l'autre :
+        # d'ou il part, et depuis quand.
+        self._bulle_onglet = None
         self._chute = None        # page d'un onglet ferme, en train de tomber
         self.travail = core.charger_groupes_travail()
         self._attente_cadre = None   # minuteur du repeint de fin de fondu
@@ -2349,6 +2772,23 @@ class Navigateur(Form):
         largeur = self.largeur_onglet()
         plan, fin = self._plan_onglets(largeur)
 
+        # Le fond de l'onglet actif se dessine AVANT la boucle : il doit
+        # passer sous les titres et les icones, y compris ceux des onglets
+        # qu'il traverse en chemin.
+        bulle = None
+        if self._bulle_onglet is not None:
+            arrivee = next(((xe, lv) for genre, element, xe, lv in plan
+                            if genre != "fantome" and element is self.actif),
+                           None)
+            bulle = self._avancer_bulle(arrivee) if arrivee else None
+            if bulle is None:
+                self._bulle_onglet = None
+        if bulle is not None:
+            ui.remplir_arrondi(g, ui.FOND_NAV, bulle[0], 6, bulle[1],
+                               H_ONGLETS - 6, 9, "haut")
+            if bulle[1] > 86:
+                ui.etincelle(g, ui.ACCENT_PALE, bulle[0] + 17, 23, 6.5)
+
         x = fin
         for genre, element, xe, largeur_vue in plan:
             x = xe
@@ -2372,31 +2812,40 @@ class Navigateur(Form):
             if largeur_vue < 12:
                 # trop etroit pour montrer quoi que ce soit sans bavure
                 continue
-            if actif:
-                ui.remplir_arrondi(g, ui.ONGLET_ACTIF_TEINTE, x, 6,
-                                   largeur_vue, H_ONGLETS - 6, 9, "haut")
-                # Le contour fait tout le tour de l'onglet, au lieu du trait
-                # coupe qui ne couvrait que le haut. Il descend trois pixels
-                # plus bas que la barre : son trait du bas tombe donc hors du
-                # panneau, et l'onglet reste ouvert vers la page, comme il
-                # doit l'etre.
-                ui.contour_arrondi(g, ui.ACCENT, x, 6, largeur_vue - 1,
-                                   H_ONGLETS - 3, 9, 2, "haut")
+            if actif and bulle is None:
+                # La couleur de la barre d'adresse, et le fond descend
+                # jusqu'a elle sans rien entre les deux : l'onglet et la
+                # barre font une seule surface. Avec un fond viole et un
+                # contour, l'ensemble se lisait comme une petite fenetre
+                # posee sur une grande.
+                ui.remplir_arrondi(g, ui.FOND_NAV, x, 6, largeur_vue,
+                                   H_ONGLETS - 6, 9, "haut")
             elif onglet.survole:
                 ui.remplir_arrondi(g, ui.ONGLET_SURVOL, x, 6, largeur_vue,
                                    H_ONGLETS - 6, 9, "haut")
 
-            decalage = 11
+            # La marque de Plume designe l'onglet regarde, l'icone du site
+            # restant a sa droite : c'est elle qu'on cherche des yeux dans une
+            # barre chargee. Sous une certaine largeur elle est sacrifiee, le
+            # titre ayant plus besoin de la place.
+            marque = actif and not naissance and largeur_vue > 86
+            icone = x + (31 if marque else 11)
+            decalage = icone - x
+            # Pendant le voyage, l'etincelle est dessinee avec le fond qui la
+            # porte : la place lui reste reservee, elle ne la reprend qu'une
+            # fois arrivee.
+            if marque and bulle is None:
+                ui.etincelle(g, ui.ACCENT_PALE, x + 17, 23, 6.5)
             if naissance:
-                # L'etincelle prend la place de l'icone pendant l'ouverture :
-                # sans cette reserve, elle se dessinait sur le titre.
+                # L'etincelle d'ouverture prend la place de l'icone : sans
+                # cette reserve, elle se dessinait sur le titre.
                 decalage = 33
             elif onglet.favicon is not None:
                 try:
-                    g.DrawImage(onglet.favicon, Rectangle(x + 11, 15, 16, 16))
-                    decalage = 33
+                    g.DrawImage(onglet.favicon, Rectangle(icone, 15, 16, 16))
+                    decalage = icone - x + 22
                 except Exception:
-                    decalage = 11
+                    pass
 
             if onglet.endormi:
                 couleur_titre = ui.TEXTE3
@@ -3588,7 +4037,7 @@ class Navigateur(Form):
             else:
                 pastille = teinte(choisies[0])
                 halo = teinte(choisies[0])
-            fond = "#1c1b22"
+            fond = "var(--carte)"
             bord = teinte(choisies[0])
             pastilles = "".join(
                 '<button class="teinte%(actif)s" style="background:%(c)s" '
@@ -3658,6 +4107,126 @@ class Navigateur(Form):
                 return True
         return False
 
+    def appliquer_theme(self):
+        """Repose les couleurs de la fenetre apres un changement de theme.
+
+        Les dessins lisent la palette au moment de peindre : il suffit de les
+        invalider. Les couleurs posees une fois pour toutes, elles, doivent
+        etre redites : fonds des panneaux, des barres, du champ d'adresse.
+        """
+        self.BackColor = ui.BORD_PRIVE if self.privee else ui.BORD_FENETRE
+        try:
+            dessinee = icone_de_fenetre()
+            if dessinee is not None:
+                self.Icon = dessinee
+        except Exception as e:
+            journal("icone : %r" % (e,))
+        self.contenu.BackColor = ui.FOND_PAGE
+        self.barre_onglets.BackColor = ui.FOND_ONGLETS
+        self.barre_nav.BackColor = ui.FOND_NAV
+        self.barre_favoris.BackColor = ui.FOND_NAV
+        self.champ.BackColor = ui.CHAMP_FOND
+        self.champ.ForeColor = ui.TEXTE
+        for fenetre in (self._reglages, self._menu, self._liste, self._bulle):
+            if fenetre is not None:
+                try:
+                    fenetre.BackColor = ui.FOND_NAV
+                    fenetre.Invalidate()
+                except Exception:
+                    pass
+        for onglet in self.onglets:
+            try:
+                onglet.vue.BackColor = ui.FOND_PAGE
+                onglet.vue.DefaultBackgroundColor = ui.FOND_PAGE
+            except Exception:
+                pass
+        # Les deux pages locales portent la palette dans leur style : elles se
+        # reecrivent, et les onglets qui les montrent se rechargent.
+        self.ecrire_accueil()
+        self.ecrire_parametres()
+        self.recharger_pages_locales()
+        for element in (self.barre_onglets, self.barre_nav,
+                        self.barre_favoris):
+            element.Invalidate()
+        self.Invalidate()
+
+    def recharger_pages_locales(self):
+        """Relit la page d'accueil et celle des parametres la ou elles sont."""
+        locales = (ACCUEIL.lower(), PARAMETRES.lower())
+        for onglet in list(self.onglets):
+            if (onglet.url or "").lower() in locales:
+                self.recharger_onglet(onglet)
+
+    def appliquer_modules(self):
+        """Met la fenetre d'accord avec l'etat des modules."""
+        sans_pub = core.module_actif("ext_sans_pub")
+        for onglet in list(self.onglets):
+            try:
+                if sans_pub:
+                    onglet.poser_sans_pub()
+                else:
+                    onglet.retirer_sans_pub()
+            except Exception as e:
+                journal("modules : %r" % (e,))
+        if core.module_actif("ext_veille"):
+            self.demarrer_veille()
+        else:
+            self.arreter_veille()
+        if not core.module_actif("ext_lecteur_twitch"):
+            for onglet in list(self.onglets):
+                try:
+                    onglet.incrustation.arreter()
+                except Exception:
+                    pass
+        self.barre_nav.Invalidate()
+
+    def appliquer_reglage(self, cle, valeur):
+        """Execute ce que la page des parametres demande.
+
+        Elle ne touche a rien elle-meme : elle envoie une cle et une valeur,
+        et c'est ici qu'on decide ce que cela change dans l'application.
+        """
+        if cle == "defaut":
+            core.ouvrir_reglages_defaut()
+            return
+        if cle == "maj":
+            self.verifier_maj_maintenant()
+            return
+        if cle == "oublier_maj":
+            core.oublier_verification_maj()
+            self.signaler(core.t("param_oubli_fait"), erreur=False)
+            return
+        if cle == "langue":
+            if core.definir_langue(str(valeur or "")):
+                self.appliquer_langue()
+                for fenetre in list(FENETRES):
+                    fenetre.ecrire_parametres()
+                    fenetre.recharger_pages_locales()
+            return
+        if cle == "theme":
+            core.definir_reglage("theme", valeur)
+            appliquer_theme_partout()
+            return
+        if cle not in ("moteur_recherche", "qualite_max", "veille_onglets",
+                       "intro", "glissement_onglets", "ext_sans_pub",
+                       "ext_lecteur_twitch", "ext_veille"):
+            journal("reglage inconnu : %s" % cle)
+            return
+        core.definir_reglage(cle, valeur)
+        if cle.startswith("ext_") or cle == "veille_onglets":
+            for fenetre in list(FENETRES):
+                try:
+                    fenetre.appliquer_modules()
+                except Exception as e:
+                    journal("modules : %r" % (e,))
+        if cle == "ext_sans_pub":
+            # Les pages deja chargees ont deja vu passer leurs pubs, ou s'en
+            # sont passees : elles se relisent pour prendre le changement.
+            for fenetre in list(FENETRES):
+                for onglet in list(fenetre.onglets):
+                    if "youtube." in (onglet.url or ""):
+                        fenetre.recharger_onglet(onglet)
+
     def appliquer_langue(self):
         """Rejoue l'interface dans la nouvelle langue, sans redemarrer.
 
@@ -3678,10 +4247,157 @@ class Navigateur(Form):
             except Exception as e:
                 journal("changement de langue : %s" % e)
 
+    def ecrire_parametres(self):
+        """Reecrit la page des parametres avec l'etat du moment."""
+        def bascule(cle, actif):
+            return ('<button class="bascule%s" role="switch" '
+                    'onclick="basculer(this, \'%s\')">'
+                    '<span class="rond"></span></button>'
+                    % (" oui" if actif else "", cle))
+
+        def module(cle, nom, aide, actif, sous=""):
+            return (
+                '<div class="carte module" style="margin-bottom:12px">'
+                '<div class="ligne tete">'
+                '<div class="texte"><div class="nom">%s</div>'
+                '<div class="aide">%s</div></div>'
+                '<span class="etat">%s</span>%s</div>%s</div>'
+                % (_echapper(nom), _echapper(aide),
+                   _echapper(core.t("param_actif") if actif
+                                   else core.t("param_inactif")),
+                   bascule(cle, actif),
+                   ('<div class="sous%s">%s</div>'
+                    % ("" if actif else " absent", sous)) if sous else ""))
+
+        def choix(cle, valeurs, actuelle):
+            return "".join(
+                '<option value="%s"%s>%s</option>'
+                % (_echapper(str(v)),
+                   " selected" if v == actuelle else "",
+                   _echapper(nom))
+                for v, nom in valeurs)
+
+        cfg = core.CONFIG
+        langue = core.langue()
+        accent = ui.accent_courant()
+        # Chaque theme porte son nom : une pastille seule ne disait pas ce
+        # qu'elle allait changer.
+        teintes = "".join(
+            '<button class="theme%s" data-couleur="%s"'
+            ' onclick="teinte(&#39;%s&#39;, this)">'
+            '<span class="rond" style="background:%s"></span>%s</button>'
+            % (" prise" if couleur.lower() == accent.lower() else "",
+               couleur, couleur, couleur,
+               _echapper(core.t("param_teinte_" + nom)))
+            for nom, couleur in ui.THEMES)
+        qualites = ('<span>%s</span><select onchange="dire(\'qualite_max\','
+                    ' parseInt(this.value, 10))">%s</select>'
+                    % (_echapper(core.t("param_qualite")),
+                       choix("qualite_max", QUALITES,
+                             cfg.get("qualite_max"))))
+        veilles = ('<span>%s</span><select onchange="dire(\'veille_onglets\','
+                   ' parseInt(this.value, 10))">%s</select>'
+                   % (_echapper(core.t("param_delai")),
+                      choix("veille_onglets",
+                            tuple((v, self._dire_veille(v))
+                                  for v in self._veilles_offertes()),
+                            int(cfg.get("veille_onglets") or 0))))
+        modules = "".join((
+            module("ext_sans_pub", core.t("param_ext_pub"),
+                   core.t("param_ext_pub_aide"),
+                   core.module_actif("ext_sans_pub")),
+            module("ext_lecteur_twitch", core.t("param_ext_twitch"),
+                   core.t("param_ext_twitch_aide"),
+                   core.module_actif("ext_lecteur_twitch"), qualites),
+            module("ext_veille", core.t("param_ext_veille"),
+                   core.t("param_ext_veille_aide"),
+                   core.module_actif("ext_veille"), veilles)))
+
+        ligne_defaut = ""
+        if not core.est_navigateur_par_defaut():
+            ligne_defaut = (
+                '<div class="ligne"><div class="texte">'
+                '<div class="nom">%s</div><div class="aide">%s</div></div>'
+                '<button class="bouton" onclick="dire(\'defaut\', true)">'
+                '%s</button></div>'
+                % (_echapper(core.t("param_defaut")),
+                   _echapper(core.t("param_defaut_aide")),
+                   _echapper(core.t("param_defaut_bouton"))))
+
+        valeurs = {
+            "langue_page": langue,
+            "titre": _echapper(core.t("param_titre")),
+            "accent": accent, "pale": ui.ecrire_couleur(ui.ACCENT_PALE),
+            "fond": ui.ecrire_couleur(ui.FOND_PAGE),
+            "carte": ui.ecrire_couleur(ui.FOND_ONGLETS),
+            "carte2": ui.ecrire_couleur(ui.FOND_NAV),
+            "bord": ui.ecrire_couleur(ui.CHAMP_BORD),
+            "texte": ui.ecrire_couleur(ui.TEXTE),
+            "texte2": ui.ecrire_couleur(ui.TEXTE2),
+            "texte3": ui.ecrire_couleur(ui.TEXTE3),
+            "nav_general": _echapper(core.t("param_general")),
+            "nav_apparence": _echapper(core.t("param_apparence")),
+            "nav_modules": _echapper(core.t("param_modules")),
+            "nav_apropos": _echapper(core.t("param_apropos")),
+            "langue_nom": _echapper(core.t("accueil_langue")),
+            "fr_prise": " prise" if langue == "fr" else "",
+            "en_prise": " prise" if langue == "en" else "",
+            "moteur_nom": _echapper(core.t("reglages_moteur")),
+            "moteurs": choix("moteur_recherche", MOTEURS,
+                             cfg.get("moteur_recherche")),
+            "intro_nom": _echapper(core.t("reglages_intro")),
+            "intro_aide": _echapper(core.t("param_intro_aide")),
+            "intro_bascule": bascule("intro", bool(cfg.get("intro", True))),
+            "glissement_nom": _echapper(core.t("reglages_glissement")),
+            "glissement_bascule": bascule(
+                "glissement_onglets", bool(cfg.get("glissement_onglets", True))),
+            "ligne_defaut": ligne_defaut,
+            "note_maj": _echapper(core.t("param_note_maj")),
+            "maj_nom": _echapper(core.t("reglages_maj")),
+            "maj_aide": _echapper(core.t("param_maj_aide")),
+            "maj_bouton": _echapper(core.t("param_maj_bouton")),
+            "oubli_nom": _echapper(core.t("param_oubli")),
+            "oubli_aide": _echapper(core.t("param_oubli_aide")),
+            "oubli_bouton": _echapper(core.t("param_oubli_bouton")),
+            "theme_nom": _echapper(core.t("param_theme")),
+            "theme_aide": _echapper(core.t("param_theme_aide")),
+            "theme_libre": _echapper(core.t("param_theme_libre")),
+            "teintes": teintes,
+            "teinte_depart": str(ui.angle_de_teinte(accent)),
+            "apercu_onglet": _echapper(core.t("param_apercu_onglet")),
+            "apercu_autre": _echapper(core.t("param_apercu_autre")),
+            "modules_aide": _echapper(core.t("param_modules_aide")),
+            "modules": modules,
+            "version": _echapper(core.VERSION),
+            "profil_nom": _echapper(core.t("param_profil")),
+            "profil": _echapper(PROFIL),
+            "site": "https://yielloow.github.io/Plume/",
+            "mot_actif": json.dumps(core.t("param_actif")),
+            "mot_inactif": json.dumps(core.t("param_inactif")),
+        }
+        try:
+            core.FICHIER_REGLAGES.write_text(MODELE_PARAMETRES % valeurs,
+                                             encoding="utf-8")
+        except Exception as e:
+            journal("page des parametres : %r" % (e,))
+
+    def ouvrir_parametres(self):
+        """Montre la page des parametres : celle d'un onglet ouvert, ou une neuve."""
+        self.fermer_reglages()
+        self.ecrire_parametres()
+        adresse = PARAMETRES
+        for onglet in self.onglets:
+            if (onglet.url or "").lower() == adresse.lower():
+                self.activer(onglet, glisser=True)
+                self.recharger_onglet(onglet)
+                return
+        self.nouvel_onglet(adresse)
+
     def ecrire_accueil(self):
         """Reecrit la page d'accueil avec les favoris et le compteur du moment."""
         try:
             langue = core.langue()
+            palette = _palette_des_pages()
             # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
             # disparait, au lieu de rester grise a repeter un etat.
             deja = core.est_navigateur_par_defaut()
@@ -3689,13 +4405,13 @@ class Navigateur(Form):
                 '   <button class="defaut" onclick="devenirDefaut()"\n'
                 '           title="%s">\n'
                 '     <svg viewBox="-1 -1 2 2" width="13" height="13"'
-                ' aria-hidden="true"><path fill="#a78bfa"'
+                ' aria-hidden="true"><path style="fill:var(--pale)"'
                 ' d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1'
                 ' Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>\n'
                 '     %s\n   </button>'
                 % (_echapper(core.t("accueil_defaut_aide")),
                    _echapper(core.t("accueil_defaut"))))
-            page = MODELE_ACCUEIL % {
+            page = MODELE_ACCUEIL % dict(palette, **{
                 "moteur": _echapper(core.CONFIG.get("moteur_recherche", "")),
                 "tuiles": self._tuiles_favoris(),
                 "travaux": self._cartes_travail(),
@@ -3707,7 +4423,7 @@ class Navigateur(Form):
                            *core.marques_pluriel("accueil_pubs",
                                                  self.pubs_bloquees))),
                 "pied_vie_privee": _echapper(core.t("accueil_vie_privee")),
-            }
+            })
             core.FICHIER_ACCUEIL.parent.mkdir(parents=True, exist_ok=True)
             core.FICHIER_ACCUEIL.write_text(page, encoding="utf-8")
         except Exception as e:
@@ -4259,12 +4975,6 @@ class Navigateur(Form):
         items = [{"genre": "langue", "texte": core.t("accueil_langue")},
                  {"genre": "choix", "cle": "moteur_recherche",
                   "texte": core.t("reglages_moteur"), "valeurs": MOTEURS},
-                 {"genre": "choix", "cle": "qualite_max",
-                  "texte": core.t("reglages_qualite"), "valeurs": QUALITES},
-                 {"genre": "choix", "cle": "veille_onglets",
-                  "texte": core.t("reglages_veille"),
-                  "valeurs": tuple((v, self._dire_veille(v))
-                                   for v in self._veilles_offertes())},
                  {"genre": "separateur"},
                  {"genre": "bascule", "cle": "intro",
                   "texte": core.t("reglages_intro"),
@@ -4273,6 +4983,7 @@ class Navigateur(Form):
                   "texte": core.t("reglages_glissement"),
                   "valeur": bool(cfg.get("glissement_onglets", True))}]
         items.append({"genre": "separateur"})
+        items.append({"genre": "page", "texte": core.t("param_ouvrir")})
         items.append({"genre": "maj", "texte": core.t("reglages_maj")})
         # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
         # disparait, au lieu de rester a repeter un etat.
@@ -4401,7 +5112,7 @@ class Navigateur(Form):
             if survole:
                 ui.remplir_arrondi(g, ui.ONGLET_SURVOL, 4, y, largeur - 8,
                                    h, 7)
-            if genre in ("defaut", "maj"):
+            if genre in ("defaut", "maj", "page"):
                 ui.remplir_arrondi(g, ui.ACCENT if survole else ui.CHAMP_FOND,
                                    14, y + 5, largeur - 28, h - 10, 9)
                 ui.centrer(g, item["texte"], self.police,
@@ -4500,6 +5211,8 @@ class Navigateur(Form):
         elif genre == "maj":
             self.fermer_reglages()
             self.verifier_maj_maintenant()
+        elif genre == "page":
+            self.ouvrir_parametres()
 
     def _menu_de_choix(self, item, bas_de_ligne):
         """Deroule les valeurs possibles, avec le menu deja en place.
@@ -4720,6 +5433,9 @@ class Navigateur(Form):
                 # acceleration au depart
                 fantome["echelle"] = 1.0 - part * part
                 encore = True
+        if self._bulle_onglet is not None:
+            encore = True
+            barre = True
         if self._avancer_glisse_page(maintenant):
             encore = True
         if self._avancer_chute(maintenant):
@@ -4733,11 +5449,20 @@ class Navigateur(Form):
         if not encore:
             self._arreter_anim()
 
+    def arreter_veille(self):
+        if self.minuteur_veille is None:
+            return
+        self.minuteur_veille.Stop()
+        self.minuteur_veille.Dispose()
+        self.minuteur_veille = None
+
     def demarrer_veille(self):
         """Lance la surveillance des onglets d'arriere-plan."""
         if self.minuteur_veille is not None:
             return
         if not core.CONFIG.get("veille_onglets"):
+            return
+        if not core.module_actif("ext_veille"):
             return
         self.minuteur_veille = Timer()
         self.minuteur_veille.Interval = PERIODE_VEILLE
@@ -4752,7 +5477,7 @@ class Navigateur(Form):
         aller-retour rapide entre deux onglets sans aucun cout.
         """
         delai = core.CONFIG.get("veille_onglets") or 0
-        if delai <= 0:
+        if delai <= 0 or not core.module_actif("ext_veille"):
             return
         maintenant = time.time()
         for onglet in list(self.onglets):
@@ -4842,6 +5567,14 @@ class Navigateur(Form):
                 and onglet in self.onglets:
             sens = 1 if (self.onglets.index(onglet)
                          > self.onglets.index(sortant)) else -1
+        if (sortant is not None and sortant is not onglet
+                and sortant.rect.Width > 0
+                and core.CONFIG.get("glissement_onglets", True)):
+            # La marque part d'ou elle etait : le rectangle du dernier rendu.
+            self._bulle_onglet = {"depart": (sortant.rect.X,
+                                             sortant.rect.Width),
+                                  "debut": time.time()}
+            self.animer()
         for o in self.onglets:
             # `sens` est un entier : sans `bool`, une propriete .NET
             # booleenne recevrait 0 ou 1 et refuserait la conversion.
@@ -4936,6 +5669,26 @@ class Navigateur(Form):
                              "sens": sens, "largeur": largeur,
                              "debut": time.time()}
         self.animer()
+
+    def _avancer_bulle(self, cible):
+        """Ou en est le fond de l'onglet actif, entre son depart et `cible`.
+
+        Renvoie (x, largeur) tant qu'il voyage, None quand il est arrive : le
+        dessin reprend alors sa place ordinaire.
+        """
+        etat = self._bulle_onglet
+        if etat is None:
+            return None
+        part = (time.time() - etat["debut"]) / DUREE_BULLE_ONGLET
+        if part >= 1.0:
+            self._bulle_onglet = None
+            return None
+        # La meme courbe que la page : elle part vite et se pose.
+        avance = 1.0 - (1.0 - part) ** 3
+        x0, l0 = etat["depart"]
+        x1, l1 = cible
+        return (int(round(x0 + (x1 - x0) * avance)),
+                int(round(l0 + (l1 - l0) * avance)))
 
     def _avancer_glisse_page(self, maintenant):
         """Une image du glissement. Renvoie vrai tant qu'il reste a faire."""
@@ -5322,10 +6075,10 @@ class Navigateur(Form):
             if noyau is None:
                 return
             adresse = onglet.url or ""
-            if adresse.startswith("http"):
+            if adresse.startswith("http") or adresse.startswith("file:"):
                 noyau.Navigate(adresse)
             else:
-                noyau.Reload()      # la page d'accueil est un fichier a nous
+                noyau.Reload()
         except Exception as e:
             journal("rechargement : %r" % (e,))
 
@@ -5362,6 +6115,10 @@ class Navigateur(Form):
         # chiffres. Aucun raccourci de Plume n'emploie Ctrl+Alt : la touche
         # revient donc entierement a la page, sans etre absorbee.
         if args.Control and args.Alt:
+            return
+        if args.Control and args.KeyCode == Keys.Oemcomma:
+            args.SuppressKeyPress = True
+            self.ouvrir_parametres()
             return
         if args.Control and args.KeyCode == Keys.L:
             args.SuppressKeyPress = True
@@ -5475,11 +6232,10 @@ class Navigateur(Form):
                 self.nouvel_onglet(adresse, arriere_plan=True)
             return
         if genre == "reglage":
-            # Demande venue de la page d'accueil, qui est un fichier local a
-            # nous : elle n'a pas d'autre moyen de parler a l'application.
-            cle = str(message.get("cle") or "")
-            if cle == "defaut":
-                core.ouvrir_reglages_defaut()
+            # Demande venue d'une de nos pages locales, accueil ou
+            # parametres : elles n'ont pas d'autre moyen de nous parler.
+            self.appliquer_reglage(str(message.get("cle") or ""),
+                                   message.get("valeur"))
             return
         if genre != "zone":
             journal("msg %s | actif=%s | %s"
@@ -5719,11 +6475,14 @@ class Navigateur(Form):
         style = ("position:fixed;z-index:2147483647;left:50%;top:24px;"
                  "transform:translateX(-50%);max-width:min(680px,86vw);"
                  "display:flex;align-items:center;gap:14px;"
-                 "background:#1c1b22;color:#d6d6e0;border:1px solid #7c5cff;"
+                 "background:" + ui.ecrire_couleur(ui.FOND_ONGLETS)
+                 + ";color:" + ui.ecrire_couleur(ui.TEXTE2)
+                 + ";border:1px solid " + ui.accent_courant() + ";"
                  "border-radius:10px;padding:12px 16px;"
                  "font:13px/1.5 'Segoe UI',sans-serif;"
                  "box-shadow:0 12px 40px rgba(0,0,0,.55)")
-        bouton_style = ("background:#7c5cff;color:#fff;border:0;"
+        bouton_style = ("background:" + ui.accent_courant()
+                        + ";color:#fff;border:0;"
                         "border-radius:7px;padding:7px 14px;cursor:pointer;"
                         "font:600 13px 'Segoe UI',sans-serif;flex:none")
         # Tout ce qui entre dans la page passe par json.dumps : un titre de
@@ -5772,7 +6531,8 @@ class Navigateur(Form):
         if erreur:
             couleurs = ("#2b1b1b", "#ffd9d9", "#7a3b3b")
         else:
-            couleurs = ("#1c1b22", "#d6d6e0", "#7c5cff")
+            couleurs = (ui.ecrire_couleur(ui.FOND_ONGLETS),
+                        ui.ecrire_couleur(ui.TEXTE2), ui.accent_courant())
         # Le style est passe par json.dumps, comme le texte : ecrit a la main
         # dans une chaine entre apostrophes, le « \'Segoe UI\' » de la police
         # refermait cette chaine. Le script devenait invalide, et comme
@@ -6806,6 +7566,16 @@ def jouer_repli(fenetre):
             pass
 
 
+def appliquer_theme_partout():
+    """Repose la palette, puis toutes les fenetres ouvertes."""
+    ui.appliquer_accent(core.couleur_theme())
+    for fenetre in list(FENETRES):
+        try:
+            fenetre.appliquer_theme()
+        except Exception as e:
+            journal("theme : %r" % (e,))
+
+
 def zone_de_depart(fenetres):
     """Zone de travail de l'ecran ou la premiere fenetre va s'ouvrir.
 
@@ -6954,6 +7724,9 @@ def boucle(depart, privee=False):
 
 
 def main():
+    # La palette choisie avant tout dessin : une fenetre construite avec les
+    # couleurs d'origine puis repeinte clignoterait au lancement.
+    ui.appliquer_accent(core.couleur_theme())
     core.effacer_ancien_export_cookies()
     arguments = sys.argv[1:]
     veut_fenetre = "--nouvelle-fenetre" in arguments

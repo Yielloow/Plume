@@ -22,6 +22,122 @@ from System.Drawing.Drawing2D import GraphicsPath, SmoothingMode
 from System.Drawing.Text import TextRenderingHint
 
 # ---- palette, dans l'esprit sombre de Firefox, avec notre violet ----------
+#
+# Les valeurs ci-dessous sont celles du theme d'origine. `appliquer_accent`
+# les recalcule a partir de la couleur choisie : les noms ne changent pas,
+# seul leur contenu, et tous les dessins lisent le nom au moment de peindre.
+
+# Les neutres de depart, sans aucune teinte : c'est sur eux que l'accent est
+# melange. Gardes a part pour qu'un changement de theme reparte toujours du
+# meme gris, et non du theme precedent, qui se teinterait un peu plus a
+# chaque fois.
+# Calcules pour que l'accent d'origine redonne EXACTEMENT les couleurs
+# d'avant : changer de theme ne doit pas deplacer le theme par defaut.
+_NEUTRES = {
+    "FOND_ONGLETS": (23, 24, 22), "FOND_NAV": (39, 39, 40),
+    "FOND_PAGE": (14, 16, 16), "ONGLET_ACTIF": (62, 63, 64),
+    "ONGLET_SURVOL": (48, 49, 49), "CHAMP_FOND": (23, 24, 22),
+    "CHAMP_BORD": (51, 54, 50), "CROIX_SURVOL": (79, 80, 83),
+    "BORD_FENETRE": (84, 85, 85),
+}
+# Combien d'accent recoit chaque neutre. Les surfaces larges en prennent une
+# pointe, les bords un peu plus : c'est la que la couleur se lit sans que le
+# texte en souffre.
+_TEINTES = {
+    "FOND_ONGLETS": 0.05, "FOND_NAV": 0.05, "FOND_PAGE": 0.04,
+    "ONGLET_ACTIF": 0.07, "ONGLET_SURVOL": 0.07, "CHAMP_FOND": 0.05,
+    "CHAMP_BORD": 0.09, "CROIX_SURVOL": 0.07, "BORD_FENETRE": 0.10,
+}
+# Les themes proposes : un nom, une couleur d'accent. Le reste se deduit.
+THEMES = (
+    ("violet", "#7c5cff"),
+    ("ocean", "#3b82f6"),
+    ("foret", "#2fae74"),
+    ("braise", "#f2683c"),
+    ("ardoise", "#8b8ba7"),
+)
+ACCENT_DEFAUT = "#7c5cff"
+
+
+def _melanger(base, autre, part):
+    """Deux couleurs melangees, `part` etant la place de la seconde."""
+    return tuple(int(round(base[i] + (autre[i] - base[i]) * part))
+                 for i in range(3))
+
+
+def lire_couleur(texte):
+    """Une couleur ecrite « #rrggbb », ou None si elle ne veut rien dire."""
+    t = str(texte or "").strip().lstrip("#")
+    if len(t) == 3:
+        t = "".join(c * 2 for c in t)
+    if len(t) != 6:
+        return None
+    try:
+        return tuple(int(t[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+
+
+def ecrire_couleur(couleur):
+    """La meme, en « #rrggbb » : ce que comprennent les pages."""
+    return "#%02x%02x%02x" % (couleur.R, couleur.G, couleur.B)
+
+
+def ecrire_couleur_brute(rgb):
+    """Un triplet en « #rrggbb »."""
+    return "#%02x%02x%02x" % tuple(int(v) for v in rgb)
+
+
+def angle_de_teinte(couleur):
+    """L'angle de teinte d'une couleur, de 0 a 359.
+
+    Sert a poser le curseur du choix libre sur la couleur en vigueur : sans
+    cela il repartait de zero a chaque ouverture de la page.
+    """
+    rgb = lire_couleur(couleur) or (124, 92, 255)
+    r, v, b = [c / 255.0 for c in rgb]
+    haut, bas = max(r, v, b), min(r, v, b)
+    ecart = haut - bas
+    if ecart < 1e-6:
+        return 0
+    if haut == r:
+        angle = 60 * (((v - b) / ecart) % 6)
+    elif haut == v:
+        angle = 60 * ((b - r) / ecart + 2)
+    else:
+        angle = 60 * ((r - v) / ecart + 4)
+    return int(round(angle)) % 360
+
+
+def appliquer_accent(couleur):
+    """Repose toute la palette a partir d'une couleur d'accent.
+
+    Rien n'est recree : ce sont les noms du module qui changent de contenu.
+    Les dessins les lisent au moment de peindre, il suffit donc de redemander
+    un rendu pour que la fenetre entiere change de couleur.
+    """
+    rgb = lire_couleur(couleur) or lire_couleur(ACCENT_DEFAUT)
+    globales = globals()
+    globales["ACCENT"] = Color.FromArgb(*rgb)
+    # L'accent pale sert aux marques sur fond sombre : il doit rester lisible
+    # meme quand l'accent choisi est deja tres clair.
+    globales["ACCENT_PALE"] = Color.FromArgb(*_melanger(rgb, (255, 255, 255),
+                                                        0.34))
+    for nom, neutre in _NEUTRES.items():
+        globales[nom] = Color.FromArgb(
+            *_melanger(neutre, rgb, _TEINTES[nom]))
+    # L'onglet actif d'autrefois : garde pour l'apercu d'un onglet tire.
+    globales["ONGLET_ACTIF_TEINTE"] = Color.FromArgb(
+        *_melanger(_NEUTRES["FOND_NAV"], rgb, 0.28))
+    # Le bord d'une fenetre privee reste l'accent lui-meme : c'est la seule
+    # chose qui la distingue d'une fenetre ordinaire.
+    globales["BORD_PRIVE"] = globales["ACCENT"]
+
+
+def accent_courant():
+    """La couleur d'accent en vigueur, ecrite pour une page."""
+    return ecrire_couleur(ACCENT)
+
 FOND_ONGLETS = Color.FromArgb(28, 27, 34)
 FOND_NAV = Color.FromArgb(43, 42, 51)
 FOND_PAGE = Color.FromArgb(18, 19, 26)
@@ -61,6 +177,9 @@ COULEURS_GROUPE = (
     Color.FromArgb(205, 186, 250),   # violet
     Color.FromArgb(163, 224, 230),   # turquoise
 )
+
+
+appliquer_accent(ACCENT_DEFAUT)
 
 
 def couleur_groupe(indice):
@@ -663,6 +782,23 @@ def ecran_lecteur(graphiques, couleur, x, y, largeur, hauteur, plein=True):
     graphiques.FillPath(pinceau, triangle)
     pinceau.Dispose()
     triangle.Dispose()
+
+
+def dessiner_marque(graphiques, taille, couleur=None):
+    """L'etincelle de Plume, seule, au centre d'un carre de `taille`.
+
+    Sert a fabriquer l'icone de la fenetre : le fichier .ico du raccourci ne
+    change pas, mais ce que Windows montre dans la barre des taches suit la
+    couleur choisie.
+    """
+    preparer(graphiques)
+    centre = taille / 2.0
+    couleur = couleur or ACCENT_PALE
+    # Une aureole d'abord : sans elle, l'etincelle parait maigre a 16 pixels.
+    _halo_etincelle(graphiques, couleur, centre, centre, taille * 0.30, 0.55)
+    etincelle(graphiques, couleur, centre, centre, taille * 0.46)
+    etincelle(graphiques, avec_alpha(BLANC, 200), centre, centre,
+              taille * 0.20)
 
 
 def bouton_fenetre(graphiques, genre, rect, couleur, survole=False):

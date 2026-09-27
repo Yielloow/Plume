@@ -53,6 +53,14 @@ DEFAULT_CONFIG = {
     # Adresse du fichier version.json publie a cote du telechargement. Vide,
     # Plume n'interroge rien : pas de depot, pas de requete.
     "manifeste_maj": "https://yielloow.github.io/Plume/version.json",
+    # Couleur d'accent de l'interface : un nom de theme ou un « #rrggbb ».
+    # Toute la palette en decoule, fonds compris.
+    "theme": "violet",
+    # Les modules. Livres actifs : ce sont eux qui font Plume. Chacun se
+    # coupe depuis la page des parametres, sans rien desinstaller.
+    "ext_sans_pub": True,        # les pubs de YouTube retirees dans la page
+    "ext_lecteur_twitch": True,  # les lives Twitch lus par mpv, sans coupure
+    "ext_veille": True,          # les onglets d'arriere-plan qui s'endorment
 }
 
 # Profil de la vue de navigation, au format Chromium : yt-dlp sait y lire les
@@ -118,6 +126,9 @@ MAX_HISTORIQUE = 3000
 # Page d'accueil, reecrite a chaque ouverture pour refleter les favoris
 # et le compteur. Elle vit dans profil/ : rien n'en sort de la machine.
 FICHIER_ACCUEIL = APP_DIR / "profil" / "accueil.html"
+# Page des parametres, reecrite a chaque ouverture : elle montre l'etat du
+# moment, et vit dans profil/ comme la page d'accueil.
+FICHIER_REGLAGES = APP_DIR / "profil" / "parametres.html"
 JOURNAL_MPV = APP_DIR / "profil" / "mpv.log"
 JOURNAL_LECTEUR = APP_DIR / "profil" / "lecteur.log"
 
@@ -242,8 +253,31 @@ def est_video(url):
 
 def lu_par_mpv(url):
     """Vrai si cette page confie sa video a mpv plutot qu'a son lecteur."""
+    if not module_actif("ext_lecteur_twitch"):
+        return False
     h = _hote(url)
     return any(h == s or h.endswith("." + s) for s in SITES_MPV)
+
+
+def module_actif(cle):
+    """Vrai si ce module est en service. Absent de la config : il l'est."""
+    return bool(CONFIG.get(cle, DEFAULT_CONFIG.get(cle, True)))
+
+
+def couleur_theme():
+    """La couleur d'accent voulue, ecrite « #rrggbb ».
+
+    La configuration accepte un nom de theme ou une couleur : les deux
+    reviennent au meme une fois traduits, l'interface ne connaissant que des
+    couleurs.
+    """
+    import interface as _ui      # tardif : core est charge avant l'interface
+    choix = str(CONFIG.get("theme") or "").strip()
+    for nom, couleur in _ui.THEMES:
+        if choix.lower() == nom:
+            return couleur
+    return _ui.ecrire_couleur_brute(_ui.lire_couleur(choix)
+                                    or _ui.lire_couleur(_ui.ACCENT_DEFAUT))
 
 
 TWITCH_RESERVES = (
@@ -945,7 +979,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.16"
+VERSION = "1.0.18"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
