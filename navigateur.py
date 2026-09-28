@@ -109,6 +109,13 @@ PROFIL = str(core.APP_DIR / "profil")
 # attendant une operation ayant elle-meme besoin de ce fil : Windows finissait
 # par tuer la fenetre avec un « Application Hang ».
 os.environ["WEBVIEW2_USER_DATA_FOLDER"] = PROFIL
+# Le son des pages sort du processus de WebView2 lui-meme, et non d'un
+# service a part. Mesure faite sur la machine : le service audio etait un
+# processus de plus, petit-fils de Plume. Discord, qui capte le son d'une
+# application en suivant ses processus fils, ne l'y trouvait pas, et un
+# partage de Plume partait muet.
+os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
+    "--disable-features=AudioServiceOutOfProcess")
 PORT = 47821                       # canal local pour recevoir de nouveaux onglets
 # Page d'accueil locale : un fichier du profil, jamais une page distante.
 # C'est aussi ce qui permet a la barre d'adresse de garder le focus a
@@ -756,6 +763,15 @@ MODELE_ACCUEIL = """<!doctype html>
  footer { position:fixed; bottom:26px; text-align:center; color:var(--texte3);
           font-size:12px; line-height:1.7; max-width:min(640px,86vw); }
  footer b { color:var(--texte2); font-weight:600; }
+ /* La version, discrete dans son coin : on la cherche rarement, mais quand
+    on la cherche on veut la trouver sans ouvrir un menu. Elle mene aux
+    parametres, ou elle est repetee. */
+ .version { position:fixed; right:14px; bottom:12px; background:none;
+            border:0; padding:4px 6px; border-radius:6px; cursor:pointer;
+            color:var(--texte3); font:inherit; font-size:11px;
+            letter-spacing:.3px; opacity:.75; transition:opacity .18s,
+            color .18s; }
+ .version:hover { opacity:1; color:var(--texte2); }
  .reglages { position:fixed; top:18px; right:20px; display:flex; gap:14px;
              align-items:center; font-size:12px; color:var(--texte3); }
  .reglages button { background:none; border:1px solid transparent;
@@ -789,6 +805,9 @@ MODELE_ACCUEIL = """<!doctype html>
    %(pied_pubs)s<br>
    %(pied_vie_privee)s
  </footer>
+ <button class="version" title="%(version_aide)s"
+         onclick="poster({type:'reglage',cle:'parametres',valeur:true})"
+         >%(version)s</button>
 <script>
  var moteur = "%(moteur)s";
  function poster(o) {
@@ -865,6 +884,12 @@ PERIODE_ANIM = 16            # ms, soit environ 60 images par seconde
 # Au-dela, une page video dont la memoire est repartie est rechargee sans
 # examen : mesure de prudence, son lecteur ne repart quasiment jamais.
 VEILLE_LONGUE = 900          # secondes
+# Au-dela, revenir sur une page video vaut examen du lecteur, meme si Plume
+# ne l'a pas endormie : la machine a pu dormir, ou Windows reprendre la
+# memoire d'un processus d'arriere-plan.
+ABSENCE_SUSPECTE = 300       # secondes
+# Passe ce delai sans reponse, la page est tenue pour perdue.
+ATTENTE_REPONSE = 4.0
 # Le temps que la page se remette en route avant qu'on regarde son lecteur.
 DELAI_EXAMEN_LECTEUR = 1500  # ms
 DUREE_OUVERTURE = 0.17       # s
@@ -1396,6 +1421,10 @@ JS_LECTEUR_CASSE = r"""
     var v = document.querySelector("video");
     if (!v) return false;
     if (v.error) return true;
+    // Une video dont il ne reste rien en memoire : sur une page de lecture,
+    // c'est qu'elle ne repartira pas. Ailleurs, une video jamais lancee est
+    // dans le meme etat sans etre cassee, d'ou la position en plus.
+    if (v.readyState === 0 && /[?&]v=|\/live\//.test(location.href)) return true;
     return v.readyState === 0 && v.currentTime > 0;
   } catch (e) {
     return false;
@@ -4196,6 +4225,10 @@ class Navigateur(Form):
         if cle == "defaut":
             core.ouvrir_reglages_defaut()
             return
+        if cle == "parametres":
+            # La version, dans le coin de la page d'accueil, mene ici.
+            self.ouvrir_parametres()
+            return
         if cle == "maj":
             self.verifier_maj_maintenant()
             return
@@ -4430,6 +4463,8 @@ class Navigateur(Form):
                            *core.marques_pluriel("accueil_pubs",
                                                  self.pubs_bloquees))),
                 "pied_vie_privee": _echapper(core.t("accueil_vie_privee")),
+                "version": _echapper(core.VERSION),
+                "version_aide": _echapper(core.t("param_ouvrir")),
             })
             core.FICHIER_ACCUEIL.parent.mkdir(parents=True, exist_ok=True)
             core.FICHIER_ACCUEIL.write_text(page, encoding="utf-8")
@@ -5592,7 +5627,13 @@ class Navigateur(Form):
                 # Le compteur repart d'ici : c'est maintenant que cet onglet
                 # commence a ne plus etre regarde.
                 o.derniere_activite = time.time()
+        absence = time.time() - onglet.derniere_activite
         onglet.reveiller()
+        # Revenir sur une video laissee longtemps : on verifie qu'elle peut
+        # encore jouer. Le reveil ne le fait que s'il a lui-meme endormi la
+        # page ; ici, peu importe la raison de l'absence.
+        if absence >= ABSENCE_SUSPECTE and core.est_video(onglet.url or ""):
+            self.verifier_lecteur(onglet)
         # Une mesure prise sous une autre taille de fenetre ferait apparaitre
         # le lecteur au mauvais format le temps que la page se reforme. Mieux
         # vaut ne rien montrer pendant les 120 ms qu'elle met a se redire.
@@ -6042,7 +6083,25 @@ class Navigateur(Form):
                 journal("examen du lecteur : %r" % (e,))
                 return
 
+            # Une page figee ne repond jamais : sans ce reveil-la, l'examen
+            # attendrait indefiniment une reponse qui ne vient pas.
+            reponse = []
+            muette = Timer()
+            muette.Interval = int(ATTENTE_REPONSE * 1000)
+
+            def sans_reponse(envoyeur=None, args=None):
+                muette.Stop()
+                muette.Dispose()
+                if not reponse and onglet in self.onglets:
+                    journal("lecteur muet apres la veille : %s"
+                            % str(onglet.url)[:70])
+                    self.recharger_onglet(onglet)
+
+            muette.Tick += sans_reponse
+            muette.Start()
+
             def repondre(terminee):
+                reponse.append(True)
                 try:
                     casse = str(terminee.Result or "").strip() == "true"
                 except Exception:
