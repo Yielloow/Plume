@@ -12,6 +12,12 @@ n'envoie rien nulle part.
  ·  [Site](https://yielloow.github.io/Plume/)  ·
 [Journal des versions](CHANGELOG.md)
 
+![Plume affichant un article de Wikipédia, avec trois onglets ouverts](docs/capture-onglets.png)
+
+| La page d'accueil | Les paramètres |
+|---|---|
+| ![La page d'accueil de Plume, avec son champ de recherche et deux groupes de travail](docs/capture-accueil.png) | ![La page des paramètres de Plume](docs/capture-parametres.png) |
+
 ## Ce que ça donne au compteur
 
 Une capture du Gestionnaire des tâches, prise par une utilisatrice de Plume

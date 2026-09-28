@@ -12,6 +12,12 @@ anything anywhere.
  ·  [Site](https://yielloow.github.io/Plume/)  ·
 [Changelog](CHANGELOG.md)
 
+![Plume showing a Wikipedia article, with three tabs open](docs/capture-onglets.png)
+
+| The home page | The settings |
+|---|---|
+| ![Plume's home page, with its search field and two work groups](docs/capture-accueil.png) | ![Plume's settings page](docs/capture-parametres.png) |
+
 ## What it looks like on the meter
 
 A Task Manager capture, taken by a Plume user while a Twitch live was playing

@@ -231,6 +231,22 @@ h2 {
               0 0 24px rgba(167, 139, 250, .55);
   pointer-events: none;
 }
+/* Les captures du navigateur : une grande, puis deux cote a cote. */
+.captures { display: grid; gap: 16px; }
+.captures .grande { grid-column: 1 / -1; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.vue {
+  border-radius: 12px; overflow: hidden; border: 1px solid var(--bord);
+  background: var(--onglets);
+  box-shadow: 0 30px 70px -40px rgba(0, 0, 0, .9);
+}
+.vue img { display: block; width: 100%; height: auto; }
+.vue figcaption {
+  color: var(--texte3); font-size: 12.5px; padding: 10px 14px;
+  border-top: 1px solid var(--bord);
+}
+@media (max-width: 760px) { .duo { grid-template-columns: 1fr; } }
+
 .chiffres {
   display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 18px;
 }
@@ -334,6 +350,7 @@ footer .sep { opacity: .5; margin: 0 4px; }
     <a class="onglet actif" href="#accueil" data-section="accueil">
       <svg viewBox="-1 -1 2 2" aria-hidden="true"><path fill="#a78bfa" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1 Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>
       <span data-t="o-accueil"></span><span class="fermer">✕</span></a>
+    <a class="onglet" href="#apercu" data-section="apercu"><span data-t="o-apercu"></span><span class="fermer">✕</span></a>
     <a class="onglet" href="#preuve" data-section="preuve"><span data-t="o-preuve"></span><span class="fermer">✕</span></a>
     <a class="onglet" href="#fonctions" data-section="fonctions"><span data-t="o-fonctions"></span><span class="fermer">✕</span></a>
     <a class="onglet" href="#installer" data-section="installer"><span data-t="o-installer"></span><span class="fermer">✕</span></a>
@@ -378,6 +395,31 @@ footer .sep { opacity: .5; margin: 0 4px; }
     <span data-t="telecharger"></span></a>
   <p class="sous"><span data-t="exigences"></span> <span id="taille"></span> <span data-t="rien-installer"></span></p>
   <a class="defiler" href="#preuve" data-t="defiler"></a>
+</section>
+
+<section id="apercu" class="monte">
+  <span class="etiquette" data-t="apercu-etiquette"></span>
+  <h2 data-t="apercu-titre"></h2>
+  <p class="chapeau" data-t="apercu-texte"></p>
+  <div class="captures">
+    <figure class="vue grande">
+      <img src="capture-onglets.png" width="1600" height="869" loading="lazy"
+           data-t-alt="apercu-alt-onglets" alt="">
+      <figcaption data-t="apercu-legende-onglets"></figcaption>
+    </figure>
+    <div class="duo">
+      <figure class="vue">
+        <img src="capture-accueil.png" width="1600" height="870" loading="lazy"
+             data-t-alt="apercu-alt-accueil" alt="">
+        <figcaption data-t="apercu-legende-accueil"></figcaption>
+      </figure>
+      <figure class="vue">
+        <img src="capture-parametres.png" width="1600" height="871"
+             loading="lazy" data-t-alt="apercu-alt-parametres" alt="">
+        <figcaption data-t="apercu-legende-parametres"></figcaption>
+      </figure>
+    </div>
+  </div>
 </section>
 
 <section id="preuve" class="monte">
@@ -498,7 +540,17 @@ footer .sep { opacity: .5; margin: 0 4px; }
 var TEXTES = {
   fr: {
     titre: "Plume, un navigateur léger pour Windows",
-    "o-accueil": "Plume", "o-preuve": "Sur le vif", "o-fonctions": "Fonctions",
+    "o-accueil": "Plume", "o-apercu": "Aperçu",
+    "o-preuve": "Sur le vif", "o-fonctions": "Fonctions",
+    "apercu-etiquette": "À quoi ça ressemble",
+    "apercu-titre": "Une fenêtre, et rien autour.",
+    "apercu-texte": "Des onglets, une barre d'adresse, et la page. Ce que Plume dessine tient en trois barres, et la page a tout le reste.",
+    "apercu-legende-onglets": "Trois onglets, la page occupe toute la fenêtre.",
+    "apercu-legende-accueil": "La page d'accueil : recherche, favoris, groupes de travail.",
+    "apercu-legende-parametres": "Les paramètres : apparence et modules.",
+    "apercu-alt-onglets": "Plume affichant un article de Wikipédia, avec trois onglets ouverts.",
+    "apercu-alt-accueil": "La page d'accueil de Plume, avec son champ de recherche et deux groupes de travail.",
+    "apercu-alt-parametres": "La page des paramètres de Plume, sections général, apparence et modules.",
     "o-installer": "Installer",
     parametres: "Paramètres", langue: "Langue",
     accroche: "Un navigateur léger pour Windows. YouTube sans publicité, les lives Twitch sans coupure pub si vous le voulez, des onglets qui s'endorment quand vous ne les regardez pas, et rien qui ne quitte votre machine.",
@@ -549,7 +601,17 @@ var TEXTES = {
   },
   en: {
     titre: "Plume, a light browser for Windows",
-    "o-accueil": "Plume", "o-preuve": "In real life", "o-fonctions": "Features",
+    "o-accueil": "Plume", "o-apercu": "A look",
+    "o-preuve": "In real life", "o-fonctions": "Features",
+    "apercu-etiquette": "What it looks like",
+    "apercu-titre": "One window, and nothing around it.",
+    "apercu-texte": "Tabs, an address bar, and the page. What Plume draws fits in three bars; the page gets everything else.",
+    "apercu-legende-onglets": "Three tabs, the page fills the window.",
+    "apercu-legende-accueil": "The home page: search, bookmarks, work groups.",
+    "apercu-legende-parametres": "Settings: appearance and modules.",
+    "apercu-alt-onglets": "Plume showing a Wikipedia article, with three tabs open.",
+    "apercu-alt-accueil": "Plume's home page, with its search field and two work groups.",
+    "apercu-alt-parametres": "Plume's settings page, general, appearance and modules sections.",
     "o-installer": "Install",
     parametres: "Settings", langue: "Language",
     accroche: "A light browser for Windows. YouTube without ads, Twitch lives without ad breaks if you want, tabs that go to sleep when you are not looking at them, and nothing that leaves your machine.",
