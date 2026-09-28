@@ -6053,7 +6053,11 @@ class Navigateur(Form):
         try:
             noyau = onglet.vue.CoreWebView2
             adresse = onglet.url or ""
-            if noyau is None or not adresse.startswith("http"):
+            # Les pages de Plume, accueil et parametres, sont des fichiers :
+            # les refuser ici revenait a ne jamais les rafraichir. C'est ce
+            # qui laissait la page des parametres dans l'ancienne langue, et
+            # les deux pages dans l'ancienne couleur.
+            if noyau is None or not adresse.startswith(("http", "file:")):
                 return
             noyau.Navigate(adresse)
         except Exception as e:
