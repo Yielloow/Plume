@@ -8,6 +8,17 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.21 (2026-09-28)
+
+- Les pages de Plume se rafraîchissent : la page des paramètres restait dans
+  l'ancienne langue, et l'accueil comme les paramètres gardaient l'ancienne
+  palette après un changement de couleur.
+- En sortant du plein écran d'une vidéo, la fenêtre revient sur l'écran où
+  elle jouait, au lieu de sauter sur l'écran principal.
+
+*Plume's own pages refresh again, and leaving a video's fullscreen keeps the
+window on the screen it was playing on.*
+
 ## 1.0.20 (2026-09-28)
 
 - Une page vidéo laissée de côté longtemps repart toute seule : le lecteur est

@@ -5558,8 +5558,15 @@ class Navigateur(Form):
             agrandie = bool(self._maximise)
             normales = (self._avant_agrandissement if agrandie
                         and self._avant_agrandissement else self.Bounds)
+            # L'ecran ou la video joue. La taille d'avant, elle, peut dater
+            # d'un autre ecran : elle est posee au demarrage et n'est reprise
+            # qu'au clic sur le bouton d'agrandissement, pas quand Windows
+            # deplace la fenetre agrandie d'un ecran a l'autre. S'y fier
+            # ramenait la page sur l'ecran principal en sortant du plein
+            # ecran.
             self._plein_ecran = {"onglet": onglet, "agrandie": agrandie,
-                                 "normales": normales}
+                                 "normales": normales,
+                                 "ecran": Screen.FromHandle(self.Handle).Bounds}
             self.barre_onglets.Visible = False
             self.barre_nav.Visible = False
             self.barre_favoris.Visible = False
@@ -5583,7 +5590,23 @@ class Navigateur(Form):
         # La taille normale d'abord, puis l'agrandissement : dans l'autre
         # ordre, « restaurer » ramenerait ensuite la fenetre a la taille de
         # l'ecran entier.
-        self.Bounds = etat["normales"]
+        bornes = etat["normales"]
+        ecran = etat.get("ecran")
+        if ecran is not None and not ecran.IntersectsWith(bornes):
+            # La taille d'avant vise un autre ecran : on la ramene au centre
+            # de celui ou la video jouait, plutot que de faire sauter la page
+            # sur l'ecran principal.
+            largeur = min(bornes.Width, ecran.Width)
+            hauteur = min(bornes.Height, ecran.Height)
+            bornes = Rectangle(ecran.X + (ecran.Width - largeur) // 2,
+                               ecran.Y + (ecran.Height - hauteur) // 2,
+                               largeur, hauteur)
+        # Par SetWindowPos et non par `Bounds` : c'est SetWindowPos qui a
+        # pose la fenetre en plein ecran, WinForms l'ignore, et une affectation
+        # qu'il juge inchangee ne ferait rien du tout.
+        user32.SetWindowPos(ctypes.c_void_p(self.Handle.ToInt64()), None,
+                            bornes.X, bornes.Y, bornes.Width, bornes.Height,
+                            SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOZORDER)
         if etat["agrandie"]:
             self.WindowState = FormWindowState.Maximized
         self.replacer()
