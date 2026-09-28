@@ -292,6 +292,9 @@ footer {
   max-width: 980px; margin: 0 auto; padding: 26px 24px 40px;
   border-top: 1px solid var(--bord); color: var(--texte3); font-size: 13px;
 }
+footer a { color: var(--texte2); }
+footer a:hover { color: var(--accent-pale); }
+footer .sep { opacity: .5; margin: 0 4px; }
 
 /* Les sections montent a l'approche ; visibles sans JavaScript. */
 .js .monte { opacity: 0; transform: translateY(22px);
@@ -459,7 +462,11 @@ footer {
 
 </main>
 
-<footer><span data-t="pied"></span> <span id="version"></span></footer>
+<footer><span data-t="pied"></span> <span id="version"></span>
+ <span class="sep">&middot;</span>
+ <a href="https://github.com/Yielloow/Plume" data-t="pied-code"></a>
+ <span class="sep">&middot;</span>
+ <span data-t="pied-licence"></span></footer>
 
 </div>
 
@@ -534,6 +541,8 @@ var TEXTES = {
     "prive-titre": "Rien ne quitte votre machine",
     prive: "Plume n'a ni serveur, ni compte, ni synchronisation. Historique, favoris et cookies sont des fichiers dans le dossier profil, sur votre disque ; les supprimer suffit à tout oublier. La seule requête que Plume fait d'elle-même est une vérification de version, une fois par jour ou quand vous la demandez.",
     pied: "Plume est un projet personnel, distribué tel quel, sans garantie.",
+    "pied-code": "Code source sur GitHub",
+    "pied-licence": "Sous licence GPL-3.0",
     version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
     taille: function (mo) { return mo + " Mo ·"; },
     taille_defaut: "environ 70 Mo ·"
@@ -583,6 +592,8 @@ var TEXTES = {
     "prive-titre": "Nothing leaves your machine",
     prive: "Plume has no server, no account, no sync. History, bookmarks and cookies are files in the profil folder, on your own disk; deleting them is enough to forget everything. The only request Plume makes on its own is a version check, once a day or when you ask for it.",
     pied: "Plume is a personal project, distributed as is, without warranty.",
+    "pied-code": "Source code on GitHub",
+    "pied-licence": "Licensed under GPL-3.0",
     version: function (v, d) { return "Version " + v + (d ? ", " + d : "") + "."; },
     taille: function (mo) { return mo + " MB ·"; },
     taille_defaut: "about 70 MB ·"

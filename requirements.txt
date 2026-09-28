@@ -1,0 +1,13 @@
+# Ce dont Plume a besoin pour tourner depuis les sources.
+# Les versions sont celles avec lesquelles la 1.0.20 a ete construite.
+#
+# Il faut aussi Python 3.10 64 bits, le runtime WebView2 (present sur Windows
+# a jour), et un mpv.exe dans outils-externes/.
+
+pythonnet==3.1.0      # l'interface WinForms et GDI+, par le pont .NET
+streamlink==8.5.0     # alimente mpv pour les lives Twitch
+pillow==11.3.0        # images de l'ecran d'ouverture et de l'icone
+
+# Pour construire l'executable et l'installeur :
+#   pip install pyinstaller
+# et Inno Setup, https://jrsoftware.org/isinfo.php
