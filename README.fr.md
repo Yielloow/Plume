@@ -54,9 +54,9 @@ deux captures sont sur le [site](https://yielloow.github.io/Plume/).
   du lecteur vidéo et les pages de Plume.
 - **Fenêtre privée.** Ni historique, ni cookies, ni onglets gardés.
 - **Les services de streaming fonctionnent.** Widevine voyage avec le
-  runtime WebView2, donc le contenu protégé se lit : Netflix est testé et
-  fonctionne. Avec le plafond de 720p que tous les navigateurs subissent
-  hors Edge.
+  runtime WebView2, donc le contenu protégé se lit. Mesuré sur Netflix, avec
+  son propre panneau de statistiques : 1920x1080, Widevine en version
+  logicielle. Ni 4K ni HDR, qui demandent un déchiffrement matériel.
 - **Mises à jour en un clic.** Plume vérifie une fois par jour, vous le dit,
   et installe sur votre accord.
 
