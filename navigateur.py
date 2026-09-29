@@ -2122,6 +2122,9 @@ class Onglet(object):
                 core.CONFIG.get("mots_de_passe", False))
             noyau.Settings.IsGeneralAutofillEnabled = bool(
                 core.CONFIG.get("remplissage", False))
+            journal("confidentialite : mots de passe %s, formulaires %s"
+                    % (noyau.Settings.IsPasswordAutosaveEnabled,
+                       noyau.Settings.IsGeneralAutofillEnabled))
         except Exception as e:
             journal("confidentialite : %r" % (e,))
 
@@ -6676,11 +6679,10 @@ class Navigateur(Form):
             # vient bien d'une autre version, meme si le numero n'avait pas
             # encore ete note : c'etait le cas de tout le monde a la 1.0.22.
             return
-        self._annoncer_des_que_possible(
-            lambda: self.bandeau_maj(core.t("nouveautes_bandeau",
-                                            core.VERSION),
-                                     core.t("nouveautes_bouton"),
-                                     "nouveautes"))
+        # Une page qui s'ouvre, et non un bandeau : ce qui a change merite
+        # d'etre lu, pas apercu au-dessus d'une page qu'on regardait.
+        self.ecrire_parametres()
+        self.nouvel_onglet(PARAMETRES + "#nouveautes")
 
     def verifier_maj_maintenant(self):
         """Efface le controle du jour et verifie tout de suite.
