@@ -2194,6 +2194,21 @@ class Onglet(object):
 
     def au_depart_navigation(self, envoyeur, args):
         self.avancer_a(0.08)
+        # Les pages de Plume sont des fichiers, ecrits au moment ou on les
+        # ouvre. Y revenir autrement, par F5, par la barre d'adresse ou par
+        # une session restauree, affichait l'etat d'avant : un mot de passe
+        # tout juste enregistre n'apparaissait pas dans la liste.
+        try:
+            adresse = str(args.Uri or "").lower()
+        except Exception:
+            return
+        try:
+            if adresse == PARAMETRES.lower():
+                self.nav.ecrire_parametres()
+            elif adresse == ACCUEIL.lower():
+                self.nav.ecrire_accueil()
+        except Exception as e:
+            journal("page locale reecrite : %r" % (e,))
 
     def au_contenu(self, envoyeur, args):
         self.avancer_a(0.45)
@@ -6655,8 +6670,12 @@ class Navigateur(Form):
         if vue == core.VERSION:
             return
         core.definir_reglage("version_vue", core.VERSION)
-        if not vue:
-            return              # premiere installation : rien a annoncer
+        if not vue and not core.FICHIER_HISTORIQUE.exists():
+            # Installation neuve : elle n'a rien a raconter de la version
+            # precedente. Une installation qui a deja un historique, elle,
+            # vient bien d'une autre version, meme si le numero n'avait pas
+            # encore ete note : c'etait le cas de tout le monde a la 1.0.22.
+            return
         self._annoncer_des_que_possible(
             lambda: self.bandeau_maj(core.t("nouveautes_bandeau",
                                             core.VERSION),
