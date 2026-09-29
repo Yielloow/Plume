@@ -6,6 +6,12 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.23 (2026-09-30)
+
+- Plume no longer overwrites `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` and
+  `WEBVIEW2_USER_DATA_FOLDER`: switches and a profile path set before launch
+  are kept, which is what portable setups need.
+
 ## 1.0.22 (2026-09-29)
 
 - A "What's new" panel in the settings, fed by this changelog, and a banner

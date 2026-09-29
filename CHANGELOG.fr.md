@@ -6,6 +6,12 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
+## 1.0.23 (2026-09-30)
+
+- Plume n'écrase plus `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` ni
+  `WEBVIEW2_USER_DATA_FOLDER` : les options et le chemin de profil posés
+  avant le lancement sont gardés, ce dont un usage portable a besoin.
+
 ## 1.0.22 (2026-09-29)
 
 - Une section « Nouveautés » dans les paramètres, tirée du journal des

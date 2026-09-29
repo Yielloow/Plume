@@ -110,14 +110,23 @@ PROFIL = str(core.APP_DIR / "profil")
 # CoreWebView2Environment.CreateAsync().Result, qui bloque le fil d'interface en
 # attendant une operation ayant elle-meme besoin de ce fil : Windows finissait
 # par tuer la fenetre avec un « Application Hang ».
-os.environ["WEBVIEW2_USER_DATA_FOLDER"] = PROFIL
+# Le dossier de profil, a cote de l'executable : c'est ce qui rend Plume
+# portable, dossier deplace, session comprise. Qui veut le mettre ailleurs
+# pose la variable lui-meme, et elle est respectee.
+os.environ.setdefault("WEBVIEW2_USER_DATA_FOLDER", PROFIL)
+PROFIL = os.environ["WEBVIEW2_USER_DATA_FOLDER"]
 # Le son des pages sort du processus de WebView2 lui-meme, et non d'un
 # service a part. Mesure faite sur la machine : le service audio etait un
 # processus de plus, petit-fils de Plume. Discord, qui capte le son d'une
 # application en suivant ses processus fils, ne l'y trouvait pas, et un
 # partage de Plume partait muet.
+# Les arguments deja poses par qui lance Plume sont gardes : les ecraser
+# revenait a interdire tout reglage du moteur depuis l'exterieur, ce que des
+# utilisateurs font pour un usage portable.
+_ARGS_MOTEUR = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "").strip()
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
-    "--disable-features=AudioServiceOutOfProcess")
+    (_ARGS_MOTEUR + " " if _ARGS_MOTEUR else "")
+    + "--disable-features=AudioServiceOutOfProcess")
 PORT = 47821                       # canal local pour recevoir de nouveaux onglets
 # Page d'accueil locale : un fichier du profil, jamais une page distante.
 # C'est aussi ce qui permet a la barre d'adresse de garder le focus a
