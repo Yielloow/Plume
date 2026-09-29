@@ -52,6 +52,9 @@ still well under what a full browser costs. Both captures are on the
   bars, the tabs, the drawn opening, the window icon, the video player's
   controls and Plume's own pages.
 - **Private window.** No history, no cookies, no tabs kept.
+- **Streaming services work.** Widevine ships with the WebView2 runtime,
+  so protected content plays: Netflix is tested and works. The same 720p
+  cap every browser gets outside of Edge applies here too.
 - **One-click updates.** Plume checks once a day, tells you, and installs on
   your word.
 
