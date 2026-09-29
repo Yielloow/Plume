@@ -26,6 +26,7 @@ import json
 import base64
 import math
 import os
+import platform
 import socket
 import subprocess
 import sys
@@ -93,6 +94,7 @@ from System.Windows.Forms import (                                 # noqa: E402
     FormStartPosition, Screen, TextBox, Timer, ToolTip,
     UnhandledExceptionMode)
 from Microsoft.Web.WebView2.Core import (                          # noqa: E402
+    CoreWebView2BrowsingDataKinds, CoreWebView2Environment,
     CoreWebView2FaviconImageFormat, CoreWebView2MemoryUsageTargetLevel,
     CoreWebView2WebResourceContext)
 from Microsoft.Web.WebView2.WinForms import (                      # noqa: E402
@@ -123,6 +125,8 @@ PORT = 47821                       # canal local pour recevoir de nouveaux ongle
 ACCUEIL = core.FICHIER_ACCUEIL.as_uri()
 # La page des parametres, locale elle aussi : elle n'existe que sur ce poste.
 PARAMETRES = core.FICHIER_REGLAGES.as_uri()
+# La ou un probleme se raconte : le depot, seul endroit qui garde trace.
+ADRESSE_SIGNALEMENT = "https://github.com/Yielloow/Plume/issues/new"
 
 # origine des horodatages Unix, pour convertir les dates des cookies
 EPOCH = DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)
@@ -506,6 +510,26 @@ MODELE_PARAMETRES = """<!doctype html>
  .hexa:focus { border-color:var(--accent); }
  .note { color:var(--texte3); font-size:12.5px; margin:10px 2px 0;
          line-height:1.5; }
+ .compte { display:flex; align-items:center; gap:12px; padding:9px 18px;
+           border-top:1px solid var(--bord); font-size:13.5px; }
+ .compte .site { color:var(--texte); min-width:0; overflow:hidden;
+                 text-overflow:ellipsis; white-space:nowrap; flex:1; }
+ .compte .qui { color:var(--texte2); min-width:0; overflow:hidden;
+                text-overflow:ellipsis; white-space:nowrap; flex:1; }
+ .compte .quand { color:var(--texte3); font-size:12px; flex:none; }
+ .compte .retirer { flex:none; width:26px; height:26px; border:0;
+                    border-radius:7px; background:transparent;
+                    color:var(--texte3); font:inherit; font-size:14px;
+                    line-height:1; cursor:pointer; }
+ .compte .retirer:hover { background:var(--survol2); color:var(--texte); }
+ .compte.partie { opacity:.4; }
+ .version-titre { display:flex; align-items:baseline; gap:10px;
+                  margin-bottom:6px; }
+ .version-titre b { font-size:14px; }
+ .version-titre span { color:var(--texte3); font-size:12px; }
+ .version-points { margin:0; padding-left:18px; color:var(--texte2);
+                   font-size:13.5px; line-height:1.55; }
+ .version-points li { margin:3px 0; }
  .apropos { color:var(--texte2); font-size:13.5px; }
  .apropos b { color:var(--texte); font-weight:600; }
  .apropos a { color:var(--pale); }
@@ -524,6 +548,7 @@ MODELE_PARAMETRES = """<!doctype html>
   <a href="#general">%(nav_general)s</a>
   <a href="#apparence">%(nav_apparence)s</a>
   <a href="#modules">%(nav_modules)s</a>
+  <a href="#nouveautes">%(nav_nouveautes)s</a>
   <a href="#apropos">%(nav_apropos)s</a>
  </nav>
  <main>
@@ -551,6 +576,29 @@ MODELE_PARAMETRES = """<!doctype html>
      %(glissement_bascule)s
     </div>
     %(ligne_defaut)s
+   </div>
+   <div class="carte" style="margin-top:12px">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(mdp_nom)s</div>
+      <div class="aide">%(mdp_aide)s</div></div>
+     %(mdp_bascule)s
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(formulaires_nom)s</div>
+      <div class="aide">%(formulaires_aide)s</div></div>
+     %(formulaires_bascule)s
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(mdp_oubli_nom)s</div>
+      <div class="aide">%(mdp_oubli_aide)s</div></div>
+     <button class="bouton" onclick="dire('oublier_mdp', true)">%(mdp_oubli_bouton)s</button>
+    </div>
+   </div>
+   <div class="carte" style="margin-top:12px">
+    <div class="ligne"><div class="texte">
+     <div class="nom">%(comptes_nom)s</div>
+     <div class="aide">%(comptes_aide)s</div></div></div>
+    %(comptes)s
    </div>
    <p class="note">%(note_maj)s</p>
    <div class="carte">
@@ -605,17 +653,52 @@ MODELE_PARAMETRES = """<!doctype html>
    %(modules)s
   </section>
 
+  <section id="nouveautes">
+   <h2>%(nav_nouveautes)s</h2>
+   <p class="note" style="margin-top:-4px">%(nouveautes_aide)s</p>
+   <div class="carte">%(nouveautes)s</div>
+  </section>
+
   <section id="apropos">
    <h2>%(nav_apropos)s</h2>
-   <div class="carte"><div class="ligne"><div class="texte apropos">
-    <div><b>Plume %(version)s</b></div>
-    <div style="margin-top:6px">%(profil_nom)s : %(profil)s</div>
-    <div style="margin-top:6px"><a href="%(site)s">%(site)s</a></div>
-   </div></div></div>
+   <div class="carte">
+    <div class="ligne"><div class="texte apropos">
+     <div><b>Plume %(version)s</b></div>
+     <div style="margin-top:6px">%(profil_nom)s : %(profil)s</div>
+     <div style="margin-top:6px"><a href="%(site)s">%(site)s</a></div>
+    </div></div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(bug_nom)s</div>
+      <div class="aide">%(bug_aide)s</div></div>
+     <button class="bouton" onclick="dire('signaler', true)">%(bug_bouton)s</button>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(infos_nom)s</div>
+      <div class="aide">%(infos_aide)s</div></div>
+     <button class="bouton" onclick="copierInfos(this)">%(infos_bouton)s</button>
+    </div>
+   </div>
   </section>
  </main>
 </div>
 <script>
+ var INFOS = %(infos)s;
+ function oublierUn(bouton, ident) {
+   // La ligne s'efface tout de suite ; Plume dira si la suppression a du
+   // etre remise au prochain demarrage.
+   var ligne = bouton.parentNode;
+   ligne.classList.add("partie");
+   bouton.disabled = true;
+   dire("oublier_un_mdp", ident);
+ }
+ function copierInfos(bouton) {
+   // Ce qu'un signalement doit porter, pret a coller : sans ces lignes, la
+   // moitie des echanges sert a demander la version et le systeme.
+   try { navigator.clipboard.writeText(INFOS); } catch (e) {}
+   var avant = bouton.textContent;
+   bouton.textContent = %(infos_fait)s;
+   setTimeout(function () { bouton.textContent = avant; }, 1800);
+ }
  function dire(cle, valeur) {
    try {
      window.chrome.webview.postMessage(JSON.stringify(
@@ -1637,6 +1720,28 @@ JS = r"""
     }
   }
 
+  // YouTube s'affiche parfois sans lecteur ni suggestions : une page vide,
+  // que recharger a la main ranime. La page le constate elle-meme, quelques
+  // secondes apres le chargement, et laisse Plume decider.
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
+    var vue_vide = "";
+    var guetter_vide = function () {
+      var u = location.href;
+      if (u === vue_vide) return;          // deja signalee, une fois suffit
+      if (document.visibilityState === "hidden") return;
+      if (!document.querySelector("ytd-app, ytm-app")) return;
+      // Un lecteur, une grille, une liste : n'importe lequel suffit a dire
+      // que la page a quelque chose a montrer.
+      if (document.querySelector(
+            "video, ytd-browse, ytd-rich-grid-renderer, ytd-item-section-renderer," +
+            " ytd-watch-next-secondary-results-renderer, ytd-search")) return;
+      vue_vide = u;
+      envoyer("page_vide", { url: u });
+    };
+    addEventListener("load", function () { setTimeout(guetter_vide, 4000); });
+    setInterval(guetter_vide, 8000);
+  }
+
   setInterval(battement, 120);
   addEventListener("scroll", battement, true);
   addEventListener("resize", battement);
@@ -1744,6 +1849,9 @@ class Onglet(object):
         # Identifiant du script qui retire les pubs, rendu par WebView2 :
         # sans lui, impossible de le retirer quand le module est coupe.
         self._id_sans_pub = None
+        # Adresse deja rechargee pour cause de page vide : on ne recommence
+        # pas, sous peine de boucler sur une page qui est vide de naissance.
+        self._vide_rechargee = ""
         self.rect = Rectangle(0, 0, 0, 0)
 
         self.vue = WebView2()
@@ -1812,6 +1920,7 @@ class Onglet(object):
             noyau.FaviconChanged += self.au_favicon
             noyau.DownloadStarting += self.au_telechargement
             noyau.Settings.IsStatusBarEnabled = False
+            self.appliquer_confidentialite(noyau)
             # Un filtre par motif plutot qu'un filtre « * » : seules les
             # requetes visees declenchent l'evenement, le reste du trafic n'est
             # pas ralenti.
@@ -1997,6 +2106,24 @@ class Onglet(object):
             self.nav.BeginInvoke(Action(executer))
         except Exception as e:
             journal("action lecteur : renvoi impossible : %s" % e)
+
+    def appliquer_confidentialite(self, noyau=None):
+        """Enregistrement des mots de passe et remplissage des formulaires.
+
+        Les deux appartiennent au moteur, pas a Plume : rien ne part
+        ailleurs, tout vit dans le dossier de profil, chiffre par Windows
+        pour ce compte d'utilisateur. Eteints par defaut.
+        """
+        try:
+            noyau = noyau if noyau is not None else self.vue.CoreWebView2
+            if noyau is None:
+                return
+            noyau.Settings.IsPasswordAutosaveEnabled = bool(
+                core.CONFIG.get("mots_de_passe", False))
+            noyau.Settings.IsGeneralAutofillEnabled = bool(
+                core.CONFIG.get("remplissage", False))
+        except Exception as e:
+            journal("confidentialite : %r" % (e,))
 
     def poser_sans_pub(self, noyau=None):
         """Injecte le retrait des pubs, et retient son identifiant.
@@ -4193,6 +4320,20 @@ class Navigateur(Form):
             if (onglet.url or "").lower() in locales:
                 self.recharger_onglet(onglet)
 
+    def oublier_mots_de_passe(self):
+        """Efface ce que le moteur a retenu : mots de passe et formulaires."""
+        try:
+            noyau = self.actif.vue.CoreWebView2 if self.actif else None
+            if noyau is None:
+                return
+            genres = (CoreWebView2BrowsingDataKinds.PasswordAutosave |
+                      CoreWebView2BrowsingDataKinds.GeneralAutofill)
+            noyau.Profile.ClearBrowsingDataAsync(genres)
+            self.signaler(core.t("param_mdp_fait"), erreur=False)
+        except Exception as e:
+            journal("oubli des mots de passe : %r" % (e,))
+            self.signaler(core.t("param_mdp_echec"))
+
     def appliquer_modules(self):
         """Met la fenetre d'accord avec l'etat des modules."""
         sans_pub = core.module_actif("ext_sans_pub")
@@ -4225,6 +4366,22 @@ class Navigateur(Form):
         if cle == "defaut":
             core.ouvrir_reglages_defaut()
             return
+        if cle == "signaler":
+            # Le depot est le seul endroit ou un signalement se retrouve.
+            self.nouvel_onglet(ADRESSE_SIGNALEMENT)
+            return
+        if cle == "oublier_un_mdp":
+            try:
+                fait = core.oublier_mot_de_passe(int(valeur))
+            except Exception as e:
+                journal("oubli d'un mot de passe : %r" % (e,))
+                return
+            self.signaler(core.t("param_compte_oublie" if fait
+                                 else "param_compte_differe"), erreur=False)
+            return
+        if cle == "oublier_mdp":
+            self.oublier_mots_de_passe()
+            return
         if cle == "parametres":
             # La version, dans le coin de la page d'accueil, mene ici.
             self.ouvrir_parametres()
@@ -4249,10 +4406,15 @@ class Navigateur(Form):
             return
         if cle not in ("moteur_recherche", "qualite_max", "veille_onglets",
                        "intro", "glissement_onglets", "ext_sans_pub",
-                       "ext_lecteur_twitch", "ext_veille"):
+                       "ext_lecteur_twitch", "ext_veille",
+                       "mots_de_passe", "remplissage"):
             journal("reglage inconnu : %s" % cle)
             return
         core.definir_reglage(cle, valeur)
+        if cle in ("mots_de_passe", "remplissage"):
+            for fenetre in list(FENETRES):
+                for onglet in list(fenetre.onglets):
+                    onglet.appliquer_confidentialite()
         if cle.startswith("ext_") or cle == "veille_onglets":
             for fenetre in list(FENETRES):
                 try:
@@ -4353,6 +4515,37 @@ class Navigateur(Form):
                    core.t("param_ext_veille_aide"),
                    core.module_actif("ext_veille"), veilles)))
 
+        # Les identifiants retenus par le moteur. Le mot de passe n'est ni
+        # lu ni affiche : seulement ou il sert, et depuis quand.
+        comptes = "".join(
+            '<div class="compte"><span class="site">%s</span>'
+            '<span class="qui">%s</span><span class="quand">%s</span>'
+            '<button class="retirer" title="%s"'
+            ' onclick="oublierUn(this, %d)">&#10005;</button></div>'
+            % (_echapper(c["site"]),
+               _echapper(c["identifiant"] or core.t("param_compte_sans_nom")),
+               _echapper(c["date"]),
+               _echapper(core.t("param_compte_retirer")), c["id"])
+            for c in core.mots_de_passe_enregistres())
+        if not comptes:
+            comptes = ('<div class="compte"><span class="qui">%s</span></div>'
+                       % _echapper(core.t("param_comptes_aucun")))
+
+        # Le journal des versions, tel qu'il est publie : chaque version, sa
+        # date et ce qu'elle a change. Plume se mettant a jour toute seule,
+        # c'est le seul endroit ou l'on peut voir ce qui a bouge.
+        nouveautes = "".join(
+            '<div class="ligne" style="display:block">'
+            '<div class="version-titre"><b>Plume %s</b><span>%s</span></div>'
+            '<ul class="version-points">%s</ul></div>'
+            % (_echapper(v["version"]), _echapper(v["date"]),
+               "".join("<li>%s</li>" % _echapper(point)
+                       for point in v["points"]))
+            for v in core.lire_nouveautes(8))
+        if not nouveautes:
+            nouveautes = ('<div class="ligne"><div class="texte aide">%s</div>'
+                          '</div>' % _echapper(core.t("nouveautes_absentes")))
+
         ligne_defaut = ""
         if not core.est_navigateur_par_defaut():
             ligne_defaut = (
@@ -4409,7 +4602,32 @@ class Navigateur(Form):
             "modules_aide": _echapper(core.t("param_modules_aide")),
             "modules": modules,
             "version": _echapper(core.VERSION),
+            "nav_nouveautes": _echapper(core.t("param_nouveautes")),
+            "comptes_nom": _echapper(core.t("param_comptes")),
+            "comptes_aide": _echapper(core.t("param_comptes_aide")),
+            "comptes": comptes,
+            "nouveautes_aide": _echapper(core.t("param_nouveautes_aide")),
+            "nouveautes": nouveautes,
             "profil_nom": _echapper(core.t("param_profil")),
+            "mdp_nom": _echapper(core.t("param_mdp")),
+            "mdp_aide": _echapper(core.t("param_mdp_aide")),
+            "mdp_bascule": bascule("mots_de_passe",
+                                   bool(cfg.get("mots_de_passe", False))),
+            "formulaires_nom": _echapper(core.t("param_formulaires")),
+            "formulaires_aide": _echapper(core.t("param_formulaires_aide")),
+            "formulaires_bascule": bascule(
+                "remplissage", bool(cfg.get("remplissage", False))),
+            "mdp_oubli_nom": _echapper(core.t("param_mdp_oubli")),
+            "mdp_oubli_aide": _echapper(core.t("param_mdp_oubli_aide")),
+            "mdp_oubli_bouton": _echapper(core.t("param_oubli_bouton")),
+            "bug_nom": _echapper(core.t("param_bug")),
+            "bug_aide": _echapper(core.t("param_bug_aide")),
+            "bug_bouton": _echapper(core.t("param_bug_bouton")),
+            "infos_nom": _echapper(core.t("param_infos")),
+            "infos_aide": _echapper(core.t("param_infos_aide")),
+            "infos_bouton": _echapper(core.t("param_infos_bouton")),
+            "infos": json.dumps(self._infos_de_signalement()),
+            "infos_fait": json.dumps(core.t("param_infos_fait")),
             "profil": _echapper(PROFIL),
             "site": "https://yielloow.github.io/Plume/",
             "mot_actif": json.dumps(core.t("param_actif")),
@@ -4420,6 +4638,27 @@ class Navigateur(Form):
                                              encoding="utf-8")
         except Exception as e:
             journal("page des parametres : %r" % (e,))
+
+    def _infos_de_signalement(self):
+        """Ce qu'un signalement doit porter : version, systeme, moteur, etat.
+
+        Demande a chaque fois dans les echanges, et jamais sous la main de
+        celui qui signale : autant le lui donner tout pret.
+        """
+        try:
+            moteur = CoreWebView2Environment.GetAvailableBrowserVersionString()
+        except Exception:
+            moteur = "?"
+        modules = ", ".join(
+            "%s %s" % (cle, "actif" if core.module_actif(cle) else "inactif")
+            for cle in ("ext_sans_pub", "ext_lecteur_twitch", "ext_veille"))
+        return "\n".join((
+            "Plume %s" % core.VERSION,
+            "Windows %s" % platform.version(),
+            "WebView2 %s" % str(moteur).strip(),
+            "Langue %s, theme %s" % (core.langue(), ui.accent_courant()),
+            "Modules : %s" % modules,
+        ))
 
     def ouvrir_parametres(self):
         """Montre la page des parametres : celle d'un onglet ouvert, ou une neuve."""
@@ -6297,6 +6536,11 @@ class Navigateur(Form):
             else:
                 self.ouvrir_groupe_travail(nom)
             return
+        if genre == "maj" and message.get("action") == "nouveautes":
+            # Le meme bandeau sert a annoncer les nouveautes : ce bouton-la
+            # n'installe rien, il ouvre la page.
+            self.ouvrir_parametres()
+            return
         if genre == "maj":
             # Demande venue du bandeau que nous avons pose nous-memes. On ne
             # fait rien sans une mise a jour en attente : une page ne doit pas
@@ -6315,6 +6559,16 @@ class Navigateur(Form):
             # Une pub retiree de la reponse du lecteur, ou sautee au vol :
             # elle compte avec les requetes refusees sur la page d'accueil.
             self.pubs_bloquees += 1
+            return
+        if genre == "page_vide":
+            # La page s'est chargee sans rien montrer. Un rechargement la
+            # ranime ; une seule fois par adresse, pour qu'une page
+            # reellement vide ne tourne pas en boucle.
+            adresse = str(message.get("url") or "")
+            if adresse and onglet._vide_rechargee != adresse:
+                onglet._vide_rechargee = adresse
+                journal("page vide, rechargement : %s" % adresse[:70])
+                self.recharger_onglet(onglet)
             return
         if genre == "onglet_derriere":
             # Clic de la molette, ou Ctrl+clic : la page a retenu le geste et
@@ -6390,6 +6644,24 @@ class Navigateur(Form):
                 journal("cookies exportes : %d" % (len(lignes) - 3))
             except Exception as e:
                 journal("cookies : %s" % e)
+
+    def annoncer_nouveautes(self):
+        """Au premier lancement d'une version, propose de voir ce qui a change.
+
+        Une seule fois : la version annoncee est notee. Une installation
+        neuve ne dit rien, elle n'a rien a raconter de la precedente.
+        """
+        vue = str(core.CONFIG.get("version_vue") or "")
+        if vue == core.VERSION:
+            return
+        core.definir_reglage("version_vue", core.VERSION)
+        if not vue:
+            return              # premiere installation : rien a annoncer
+        self._annoncer_des_que_possible(
+            lambda: self.bandeau_maj(core.t("nouveautes_bandeau",
+                                            core.VERSION),
+                                     core.t("nouveautes_bouton"),
+                                     "nouveautes"))
 
     def verifier_maj_maintenant(self):
         """Efface le controle du jour et verifie tout de suite.
@@ -7085,6 +7357,10 @@ class Navigateur(Form):
             threading.Thread(target=self.ecouter, daemon=True).start()
             threading.Thread(target=self.guetter_mise_a_jour,
                              daemon=True).start()
+            # Premier lancement d'une nouvelle version : on dit ce qui a
+            # change, une fois, plutot que de laisser le numero changer seul
+            # dans son coin.
+            self.annoncer_nouveautes()
         # Pendant l'ouverture, la fenetre reste invisible : elle apparaitra
         # quand l'ecran d'ouverture s'effacera, pas par-dessus lui.
         if not self._sans_fondu and _OUVERTURE[0] is None:

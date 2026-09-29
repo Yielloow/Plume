@@ -8,6 +8,23 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.22 (2026-09-29)
+
+- Une section « Nouveautés » dans les paramètres, tirée du journal des
+  versions, et un bandeau au premier lancement d'une nouvelle version.
+- Les mots de passe enregistrés se listent et s'oublient un par un. Plume ne
+  lit ni n'affiche jamais le mot de passe lui-même, seulement le site,
+  l'identifiant et la date.
+- Enregistrement des mots de passe et remplissage des formulaires, éteints
+  par défaut, avec de quoi tout effacer.
+- De quoi signaler un problème, et copier les informations utiles au
+  signalement.
+- Une page YouTube qui s'affiche vide se recharge d'elle-même.
+
+*A what's new panel, saved passwords you can list and forget one at a time,
+optional password saving, a way to report a problem, and blank YouTube pages
+that reload themselves.*
+
 ## 1.0.21 (2026-09-28)
 
 - Les pages de Plume se rafraîchissent : la page des paramètres restait dans

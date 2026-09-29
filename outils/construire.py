@@ -37,7 +37,7 @@ TRAVAIL = Path(os.environ.get("TEMP", ".")) / "plume-build"
 # Fichiers du projet a embarquer tels quels
 SOURCES = ["navigateur.py", "interface.py", "incrustation.py", "core.py",
            "langues.py", "plume.py", "barre_taches.py", "osc.lua",
-           "config.json", "README.md"]
+           "config.json", "README.md", "CHANGELOG.md"]
 
 INTERDITS = {"profil", "cookies.txt", "diagnostic.txt", "__pycache__"}
 

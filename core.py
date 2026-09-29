@@ -11,9 +11,12 @@ import os
 import re
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse
 
@@ -61,6 +64,15 @@ DEFAULT_CONFIG = {
     "ext_sans_pub": True,        # les pubs de YouTube retirees dans la page
     "ext_lecteur_twitch": True,  # les lives Twitch lus par mpv, sans coupure
     "ext_veille": True,          # les onglets d'arriere-plan qui s'endorment
+    # Enregistrement des mots de passe et remplissage des formulaires : deux
+    # reglages du moteur, eteints par defaut. Proposer d'enregistrer un mot
+    # de passe sans qu'on l'ait demande est une surprise de trop.
+    "mots_de_passe": False,
+    "remplissage": False,
+    # Derniere version dont les nouveautes ont ete annoncees. Vide au
+    # premier lancement : une installation neuve ne doit pas commencer par
+    # un journal des versions.
+    "version_vue": "",
 }
 
 # Profil de la vue de navigation, au format Chromium : yt-dlp sait y lire les
@@ -129,6 +141,13 @@ FICHIER_ACCUEIL = APP_DIR / "profil" / "accueil.html"
 # Page des parametres, reecrite a chaque ouverture : elle montre l'etat du
 # moment, et vit dans profil/ comme la page d'accueil.
 FICHIER_REGLAGES = APP_DIR / "profil" / "parametres.html"
+# Le journal des versions, embarque tel quel : c'est le meme fichier que
+# celui du depot, ecrit a chaque publication.
+FICHIER_JOURNAL = APP_DIR / "CHANGELOG.md"
+# La base du moteur ou dorment les identifiants enregistres, et la liste de
+# ceux qu'on n'a pas pu retirer tout de suite.
+FICHIER_MOTS_DE_PASSE = PROFIL_WEB / "Default" / "Login Data"
+FICHIER_OUBLIS = APP_DIR / "profil" / "mdp-oublis.json"
 JOURNAL_MPV = APP_DIR / "profil" / "mpv.log"
 JOURNAL_LECTEUR = APP_DIR / "profil" / "lecteur.log"
 
@@ -979,7 +998,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.21"
+VERSION = "1.0.22"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1207,6 +1226,193 @@ def definir_langue(code):
         return False
     CONFIG["langue"] = code
     return ecrire_config()
+
+
+def lire_nouveautes(limite=6, langue_voulue=None):
+    """Les dernieres versions du journal, en liste.
+
+    Le journal est ecrit a la main, en Markdown : un titre par version, des
+    points en francais, et un resume en anglais, en italique. Les deux formes
+    peuvent tenir sur plusieurs lignes, d'ou la lecture par etat plutot que
+    ligne par ligne. Ce qui ne s'y conforme pas est ignore, plutot que de
+    faire tomber la page.
+    """
+    voulue = langue_voulue or langue()
+    try:
+        texte = FICHIER_JOURNAL.read_text(encoding="utf-8")
+    except Exception:
+        return []
+    versions = []
+    courante = None
+    ou = None            # "point", "resume", ou rien
+
+    def ajouter(morceau):
+        if courante is None or not morceau:
+            return
+        voulu = ("resume" if voulue == "en" else "point")
+        if ou != voulu:
+            return
+        courante["points"].append(morceau)
+
+    for ligne in texte.splitlines():
+        brut = ligne.strip()
+        if brut.startswith("## "):
+            if courante is not None:
+                versions.append(courante)
+                if len(versions) >= limite:
+                    return versions
+            titre = brut[3:].strip()
+            numero, _, date = titre.partition(" (")
+            courante = {"version": numero.strip(),
+                        "date": date.strip(") "), "points": []}
+            ou = None
+            continue
+        if courante is None or not brut:
+            ou = None if not brut else ou
+            continue
+        if brut.startswith("- "):
+            ou = "point"
+            ajouter(brut[2:].strip())
+        elif brut.startswith("*") and not brut.startswith("**"):
+            ou = "resume"
+            ajouter(brut.strip("*").strip())
+        elif (courante["points"]
+              and ou == ("resume" if voulue == "en" else "point")):
+            # Suite du point precedent, coupe a la ligne suivante. Seulement
+            # si ce point est de la langue voulue : sinon la fin du resume
+            # anglais venait se coller au dernier point francais.
+            courante["points"][-1] = (courante["points"][-1] + " "
+                                      + brut.strip("*").strip())
+    if courante is not None:
+        versions.append(courante)
+    return versions[:limite]
+
+
+def _date_chromium(microsecondes):
+    """La date du moteur, comptee depuis 1601, rendue en « aaaa-mm-jj »."""
+    try:
+        valeur = int(microsecondes or 0)
+        if valeur <= 0:
+            return ""
+        quand = datetime(1601, 1, 1) + timedelta(microseconds=valeur)
+        return quand.strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _copie_lisible(chemin):
+    """Une copie de la base, la seule facon sure de la lire.
+
+    Le moteur tient le fichier ouvert et le verrouille tant qu'il tourne :
+    lire l'original echoue, ou pire, tombe au milieu d'une ecriture. Le
+    journal d'ecriture voyage avec, sans quoi la copie ignorerait les
+    dernieres lignes ajoutees.
+    """
+    dossier = Path(tempfile.mkdtemp(prefix="plume-mdp-"))
+    copie = dossier / "Login Data"
+    shutil.copy2(str(chemin), str(copie))
+    for suffixe in ("-wal", "-shm"):
+        voisin = Path(str(chemin) + suffixe)
+        if voisin.exists():
+            try:
+                shutil.copy2(str(voisin), str(copie) + suffixe)
+            except Exception:
+                pass
+    return dossier, copie
+
+
+def mots_de_passe_enregistres():
+    """Les identifiants retenus par le moteur : site, identifiant, date.
+
+    Jamais le mot de passe : la colonne qui le porte n'est pas lue. Une
+    liste vide veut dire « rien d'enregistre », ou « base illisible », et
+    dans les deux cas il n'y a rien a montrer.
+    """
+    if not FICHIER_MOTS_DE_PASSE.exists():
+        return []
+    dossier = None
+    try:
+        dossier, copie = _copie_lisible(FICHIER_MOTS_DE_PASSE)
+        lien = sqlite3.connect("file:%s?mode=ro" % copie.as_posix(), uri=True)
+        try:
+            lignes = lien.execute(
+                "SELECT id, origin_url, username_value, date_created"
+                "  FROM logins ORDER BY date_created DESC").fetchall()
+        finally:
+            lien.close()
+    except Exception:
+        return []
+    finally:
+        if dossier is not None:
+            shutil.rmtree(str(dossier), ignore_errors=True)
+    comptes = []
+    for ident, adresse, utilisateur, date in lignes:
+        comptes.append({"id": int(ident),
+                        "site": _hote(adresse) or str(adresse or ""),
+                        "identifiant": str(utilisateur or ""),
+                        "date": _date_chromium(date)})
+    return comptes
+
+
+def _lire_oublis():
+    try:
+        return [int(v) for v in json.loads(
+            FICHIER_OUBLIS.read_text(encoding="utf-8"))]
+    except Exception:
+        return []
+
+
+def _ecrire_oublis(identifiants):
+    try:
+        FICHIER_OUBLIS.parent.mkdir(parents=True, exist_ok=True)
+        FICHIER_OUBLIS.write_text(json.dumps(sorted(set(identifiants))),
+                                  encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _retirer_lignes(identifiants):
+    """Retire ces lignes de la base. Faux si elle est verrouillee."""
+    if not identifiants or not FICHIER_MOTS_DE_PASSE.exists():
+        return True
+    try:
+        lien = sqlite3.connect(str(FICHIER_MOTS_DE_PASSE), timeout=0.6)
+        try:
+            lien.executemany("DELETE FROM logins WHERE id = ?",
+                             [(int(v),) for v in identifiants])
+            lien.commit()
+        finally:
+            lien.close()
+        return True
+    except Exception:
+        return False
+
+
+def oublier_mot_de_passe(identifiant):
+    """Retire un identifiant enregistre. Vrai si c'est deja fait.
+
+    Faux veut dire « mis de cote » : le moteur tient sa base, la suppression
+    attendra le prochain demarrage de Plume. Elle n'est jamais perdue.
+    """
+    if _retirer_lignes([identifiant]):
+        return True
+    _ecrire_oublis(_lire_oublis() + [int(identifiant)])
+    return False
+
+
+def appliquer_oublis_en_attente():
+    """Applique au demarrage ce que le moteur avait empeche de retirer.
+
+    A appeler AVANT que WebView2 ne se lance : c'est le seul moment ou la
+    base n'appartient a personne.
+    """
+    en_attente = _lire_oublis()
+    if not en_attente:
+        return 0
+    if not _retirer_lignes(en_attente):
+        return 0
+    _ecrire_oublis([])
+    return len(en_attente)
 
 
 def ouvrir_reglages_defaut():
