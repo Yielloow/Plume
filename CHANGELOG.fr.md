@@ -13,8 +13,9 @@ changement, avec ses raisons, est dans les messages de commit.
 - Les mots de passe enregistrés se listent et s'oublient un par un. Plume ne
   lit ni n'affiche jamais le mot de passe lui-même, seulement le site,
   l'identifiant et la date.
-- Enregistrement des mots de passe et remplissage des formulaires, éteints
-  par défaut, avec de quoi tout effacer.
+- Enregistrement des mots de passe et remplissage des formulaires, allumés :
+  le moteur demande avant de retenir quoi que ce soit, et tout peut être
+  effacé d'un coup.
 - De quoi signaler un problème, et copier les informations utiles au
   signalement.
 - Une page YouTube qui s'affiche vide se recharge d'elle-même.

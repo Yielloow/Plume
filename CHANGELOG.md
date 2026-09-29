@@ -13,8 +13,8 @@ each change is in the commit messages.
 - Saved passwords can be listed and forgotten one at a time. Plume never
   reads or shows the password itself, only the site, the username and the
   date.
-- Password saving and form filling, both off by default, with a way to erase
-  everything at once.
+- Password saving and form filling, on by default: the engine asks before it
+  keeps anything, and everything can be erased at once.
 - A way to report a problem, and to copy the details a report needs.
 - A YouTube page that loads blank now reloads itself.
 

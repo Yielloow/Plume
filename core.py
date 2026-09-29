@@ -65,10 +65,11 @@ DEFAULT_CONFIG = {
     "ext_lecteur_twitch": True,  # les lives Twitch lus par mpv, sans coupure
     "ext_veille": True,          # les onglets d'arriere-plan qui s'endorment
     # Enregistrement des mots de passe et remplissage des formulaires : deux
-    # reglages du moteur, eteints par defaut. Proposer d'enregistrer un mot
-    # de passe sans qu'on l'ait demande est une surprise de trop.
-    "mots_de_passe": False,
-    "remplissage": False,
+    # reglages du moteur. Allumes, comme partout ailleurs : le moteur demande
+    # avant d'enregistrer quoi que ce soit, et la page des parametres montre
+    # ce qu'il retient, ligne par ligne, avec de quoi l'oublier.
+    "mots_de_passe": True,
+    "remplissage": True,
     # Derniere version dont les nouveautes ont ete annoncees. Vide au
     # premier lancement : une installation neuve ne doit pas commencer par
     # un journal des versions.
