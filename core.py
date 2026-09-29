@@ -144,6 +144,7 @@ FICHIER_REGLAGES = APP_DIR / "profil" / "parametres.html"
 # Le journal des versions, embarque tel quel : c'est le meme fichier que
 # celui du depot, ecrit a chaque publication.
 FICHIER_JOURNAL = APP_DIR / "CHANGELOG.md"
+FICHIER_JOURNAL_FR = APP_DIR / "CHANGELOG.fr.md"
 # La base du moteur ou dorment les identifiants enregistres, et la liste de
 # ceux qu'on n'a pas pu retirer tout de suite.
 FICHIER_MOTS_DE_PASSE = PROFIL_WEB / "Default" / "Login Data"
@@ -1238,8 +1239,13 @@ def lire_nouveautes(limite=6, langue_voulue=None):
     faire tomber la page.
     """
     voulue = langue_voulue or langue()
+    # Un fichier par langue, tous deux embarques : l'anglais est celui que
+    # GitHub montre, le francais celui que lisent ceux qui s'en servent.
+    fichier = FICHIER_JOURNAL if voulue == "en" else FICHIER_JOURNAL_FR
+    if not fichier.exists():
+        fichier = FICHIER_JOURNAL
     try:
-        texte = FICHIER_JOURNAL.read_text(encoding="utf-8")
+        texte = fichier.read_text(encoding="utf-8")
     except Exception:
         return []
     versions = []
@@ -1248,9 +1254,6 @@ def lire_nouveautes(limite=6, langue_voulue=None):
 
     def ajouter(morceau):
         if courante is None or not morceau:
-            return
-        voulu = ("resume" if voulue == "en" else "point")
-        if ou != voulu:
             return
         courante["points"].append(morceau)
 
@@ -1273,14 +1276,8 @@ def lire_nouveautes(limite=6, langue_voulue=None):
         if brut.startswith("- "):
             ou = "point"
             ajouter(brut[2:].strip())
-        elif brut.startswith("*") and not brut.startswith("**"):
-            ou = "resume"
-            ajouter(brut.strip("*").strip())
-        elif (courante["points"]
-              and ou == ("resume" if voulue == "en" else "point")):
-            # Suite du point precedent, coupe a la ligne suivante. Seulement
-            # si ce point est de la langue voulue : sinon la fin du resume
-            # anglais venait se coller au dernier point francais.
+        elif courante["points"] and ou == "point":
+            # Suite du point precedent, coupe a la ligne suivante.
             courante["points"][-1] = (courante["points"][-1] + " "
                                       + brut.strip("*").strip())
     if courante is not None:

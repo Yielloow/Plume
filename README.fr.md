@@ -10,7 +10,7 @@ n'envoie rien nulle part.
 
 [Télécharger la dernière version](https://github.com/Yielloow/Plume/releases/latest)
  ·  [Site](https://yielloow.github.io/Plume/)  ·
-[Journal des versions](CHANGELOG.md)
+[Journal des versions](CHANGELOG.fr.md)
 
 ![Plume affichant un article de Wikipédia, avec trois onglets ouverts](docs/capture-onglets.png)
 
