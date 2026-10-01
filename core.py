@@ -70,6 +70,9 @@ DEFAULT_CONFIG = {
     # ce qu'il retient, ligne par ligne, avec de quoi l'oublier.
     "mots_de_passe": True,
     "remplissage": True,
+    # Garder la trace des pages visitees. Eteint, Plume n'ecrit plus rien et
+    # ne propose plus que les favoris dans la barre d'adresse.
+    "historique": True,
     # Derniere version dont les nouveautes ont ete annoncees. Vide au
     # premier lancement : une installation neuve ne doit pas commencer par
     # un journal des versions.
@@ -142,6 +145,7 @@ FICHIER_ACCUEIL = APP_DIR / "profil" / "accueil.html"
 # Page des parametres, reecrite a chaque ouverture : elle montre l'etat du
 # moment, et vit dans profil/ comme la page d'accueil.
 FICHIER_REGLAGES = APP_DIR / "profil" / "parametres.html"
+FICHIER_PAGE_HISTORIQUE = APP_DIR / "profil" / "historique.html"
 # Le journal des versions, embarque tel quel : c'est le meme fichier que
 # celui du depot, ecrit a chaque publication.
 FICHIER_JOURNAL = APP_DIR / "CHANGELOG.md"
@@ -602,7 +606,8 @@ def charger_historique():
         if isinstance(e, dict) and e.get("url"):
             propre.append({"url": str(e["url"]),
                            "titre": str(e.get("titre") or ""),
-                           "vues": int(e.get("vues") or 1)})
+                           "vues": int(e.get("vues") or 1),
+                           "quand": float(e.get("quand") or 0)})
     return propre
 
 
@@ -1000,7 +1005,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.23"
+VERSION = "1.0.24"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une

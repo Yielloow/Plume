@@ -6,6 +6,24 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
+## 1.0.24 (2026-09-30)
+
+- Une page d'historique : chercher dedans, oublier une page, ou tout
+  effacer. Il peut être coupé entièrement, et une fenêtre privée n'y écrit
+  toujours rien. Ctrl+H l'ouvre.
+- Ctrl+J rouvre la fenêtre des téléchargements, qui s'affichait une fois et
+  ne revenait jamais.
+- Le mode théâtre de YouTube est retenu d'une vidéo à l'autre.
+- Le bouton théâtre du lecteur de Plume vise mieux : Twitch et YouTube ont
+  chacun leur bouton et leur raccourci.
+- Plume s'aperçoit que le moteur est mort sous elle. Un rendu qui tombe
+  recharge son onglet ; si le navigateur entier a disparu, Plume enregistre
+  sa session et repart dessus. C'est ce qui se voyait comme des pages vides
+  d'un coup, sur tous les sites à la fois.
+- Quand Windows met le runtime WebView2 à jour pendant que Plume tourne,
+  elle le dit et propose de redémarrer, au lieu d'attendre que les pages
+  meurent.
+
 ## 1.0.23 (2026-09-30)
 
 - Plume n'écrase plus `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` ni

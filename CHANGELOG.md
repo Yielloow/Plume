@@ -6,6 +6,23 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.24 (2026-09-30)
+
+- A history page: search it, forget a single page, or clear everything. It
+  can be switched off entirely, and a private window still writes nothing.
+  Ctrl+H opens it.
+- Ctrl+J reopens the downloads window, which used to appear once and never
+  come back.
+- YouTube's theatre mode is remembered from one video to the next.
+- The theatre button in Plume's player aims better: Twitch and YouTube each
+  have their own button and their own shortcut.
+- Plume notices when the engine dies under it. A renderer that crashes now
+  reloads its tab; if the whole browser process is gone, Plume saves the
+  session and restarts into it. This is what showed as every page going
+  blank at once, on every site.
+- When Windows updates the WebView2 runtime while Plume is running, Plume
+  says so and offers to restart, instead of waiting for the pages to die.
+
 ## 1.0.23 (2026-09-30)
 
 - Plume no longer overwrites `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` and

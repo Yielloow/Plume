@@ -95,6 +95,7 @@ from System.Windows.Forms import (                                 # noqa: E402
     UnhandledExceptionMode)
 from Microsoft.Web.WebView2.Core import (                          # noqa: E402
     CoreWebView2BrowsingDataKinds, CoreWebView2Environment,
+    CoreWebView2ProcessFailedKind,
     CoreWebView2FaviconImageFormat, CoreWebView2MemoryUsageTargetLevel,
     CoreWebView2WebResourceContext)
 from Microsoft.Web.WebView2.WinForms import (                      # noqa: E402
@@ -134,6 +135,7 @@ PORT = 47821                       # canal local pour recevoir de nouveaux ongle
 ACCUEIL = core.FICHIER_ACCUEIL.as_uri()
 # La page des parametres, locale elle aussi : elle n'existe que sur ce poste.
 PARAMETRES = core.FICHIER_REGLAGES.as_uri()
+HISTORIQUE = core.FICHIER_PAGE_HISTORIQUE.as_uri()
 # La ou un probleme se raconte : le depot, seul endroit qui garde trace.
 ADRESSE_SIGNALEMENT = "https://github.com/Yielloow/Plume/issues/new"
 
@@ -401,6 +403,129 @@ def _echapper_js(texte):
             .replace('"', "&quot;"))
 
 
+MODELE_HISTORIQUE = """<!doctype html>
+<html lang="%(langue_page)s"><head><meta charset="utf-8">
+<title>%(titre)s</title>
+<style>
+ :root { color-scheme: dark; --accent:%(accent)s; --pale:%(pale)s;
+         --fond:%(fond)s; --carte:%(carte)s; --carte2:%(carte2)s;
+         --bord:%(bord)s; --texte:%(texte)s; --texte2:%(texte2)s;
+         --texte3:%(texte3)s; }
+ * { box-sizing: border-box; }
+ body { margin:0; background:var(--fond); color:var(--texte);
+        font:15px "Segoe UI",system-ui,sans-serif; }
+ .page { max-width:860px; margin:0 auto; padding:44px 24px 90px; }
+ header { display:flex; align-items:center; gap:12px; margin-bottom:22px; }
+ header h1 { margin:0; font-size:28px; font-weight:600; letter-spacing:-0.4px; }
+ header .compte { margin-left:auto; color:var(--texte3); font-size:13px; }
+ .commandes { display:flex; gap:10px; margin-bottom:18px; }
+ #chercher { flex:1; background:var(--carte); color:var(--texte); font:inherit;
+             font-size:14px; border:1px solid var(--bord); border-radius:10px;
+             padding:10px 14px; outline:none; }
+ #chercher:focus { border-color:var(--accent); }
+ .bouton { background:var(--carte2); color:var(--texte); font:inherit;
+           font-size:13.5px; border:1px solid var(--bord); border-radius:10px;
+           padding:9px 15px; cursor:pointer; white-space:nowrap; }
+ .bouton:hover { border-color:var(--accent); }
+ .liste { background:var(--carte); border:1px solid var(--bord);
+          border-radius:13px; overflow:hidden; }
+ .jour { padding:11px 18px 7px; color:var(--texte3); font-size:12px;
+         letter-spacing:1.2px; text-transform:uppercase;
+         border-top:1px solid var(--bord); }
+ .jour:first-child { border-top:0; }
+ .ligne { display:flex; align-items:center; gap:12px; padding:9px 18px;
+          border-top:1px solid var(--bord); }
+ .ligne a { color:var(--texte); text-decoration:none; flex:1; min-width:0;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .ligne a:hover { color:var(--pale); }
+ .ligne .hote { color:var(--texte3); font-size:12.5px; flex:none;
+                max-width:220px; overflow:hidden; text-overflow:ellipsis;
+                white-space:nowrap; }
+ .ligne .heure { color:var(--texte3); font-size:12px; flex:none; }
+ .ligne .retirer { flex:none; width:26px; height:26px; border:0;
+                   border-radius:7px; background:transparent;
+                   color:var(--texte3); font:inherit; font-size:14px;
+                   line-height:1; cursor:pointer; }
+ .ligne .retirer:hover { background:var(--carte2); color:var(--texte); }
+ .ligne.partie { opacity:.35; }
+ .vide { padding:26px 18px; color:var(--texte3); font-size:14px;
+         text-align:center; }
+ .note { color:var(--texte3); font-size:12.5px; margin:14px 2px 0;
+         line-height:1.5; }
+</style></head>
+<body>
+<div class="page">
+ <header>
+  <svg viewBox="-1 -1 2 2" width="24" height="24" aria-hidden="true">
+   <path style="fill:var(--pale)" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1
+        Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>
+  <h1>%(titre)s</h1>
+  <span class="compte" id="compte"></span>
+ </header>
+ <div class="commandes">
+  <input id="chercher" type="search" placeholder="%(chercher)s"
+         autocomplete="off" oninput="filtrer(this.value)">
+  <button class="bouton" onclick="dire('parametres', true)">%(reglages)s</button>
+  <button class="bouton" onclick="toutEffacer()">%(tout)s</button>
+ </div>
+ <div class="liste" id="liste">%(lignes)s</div>
+ <p class="note">%(note)s</p>
+</div>
+<script>
+ function dire(cle, valeur) {
+   try {
+     window.chrome.webview.postMessage(JSON.stringify(
+       {type: "reglage", cle: cle, valeur: valeur}));
+   } catch (e) {}
+ }
+ function compter() {
+   var vues = document.querySelectorAll(".ligne:not(.partie)").length;
+   document.getElementById("compte").textContent =
+     vues + " " + (vues > 1 ? %(mot_pages)s : %(mot_page)s);
+ }
+ function filtrer(texte) {
+   var mots = texte.toLowerCase().split(/\s+/).filter(Boolean);
+   var lignes = document.querySelectorAll(".ligne");
+   for (var i = 0; i < lignes.length; i++) {
+     var foin = lignes[i].getAttribute("data-cherche");
+     var vu = true;
+     for (var j = 0; j < mots.length; j++) {
+       if (foin.indexOf(mots[j]) === -1) { vu = false; break; }
+     }
+     lignes[i].style.display = vu ? "" : "none";
+   }
+   // Un jour dont plus aucune ligne ne s'affiche n'a plus a s'afficher.
+   var jours = document.querySelectorAll(".jour");
+   for (var k = 0; k < jours.length; k++) {
+     var n = jours[k].nextElementSibling, reste = false;
+     while (n && n.classList.contains("ligne")) {
+       if (n.style.display !== "none") { reste = true; break; }
+       n = n.nextElementSibling;
+     }
+     jours[k].style.display = reste ? "" : "none";
+   }
+ }
+ function oublier(bouton, url) {
+   var ligne = bouton.parentNode;
+   ligne.classList.add("partie");
+   ligne.style.display = "none";
+   bouton.disabled = true;
+   dire("oublier_page", url);
+   compter();
+ }
+ function toutEffacer() {
+   if (!confirm(%(confirmer)s)) return;
+   dire("effacer_historique", true);
+   document.getElementById("liste").innerHTML =
+     '<div class="vide">' + %(mot_vide)s + '</div>';
+   compter();
+ }
+ compter();
+</script>
+</body></html>
+"""
+
+
 MODELE_PARAMETRES = """<!doctype html>
 <html lang="%(langue_page)s"><head><meta charset="utf-8">
 <title>%(titre)s</title>
@@ -585,6 +710,18 @@ MODELE_PARAMETRES = """<!doctype html>
      %(glissement_bascule)s
     </div>
     %(ligne_defaut)s
+   </div>
+   <div class="carte" style="margin-top:12px">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(hist_nom)s</div>
+      <div class="aide">%(hist_aide)s</div></div>
+     %(hist_bascule)s
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(hist_voir_nom)s</div>
+      <div class="aide">%(hist_voir_aide)s</div></div>
+     <button class="bouton" onclick="dire('historique_ouvrir', true)">%(hist_voir_bouton)s</button>
+    </div>
    </div>
    <div class="carte" style="margin-top:12px">
     <div class="ligne">
@@ -1274,20 +1411,55 @@ def journal(message):
 # a chaque changement de mise en page.
 SCRIPT_THEATRE = r"""
 (function () {
-  var b = document.querySelector(
-    ".ytp-size-button, button[data-a-target='player-theatre-mode-button']");
-  if (b) { try { b.click(); return "bouton"; } catch (e) {} }
-  var cible = document.querySelector("#movie_player, .video-player")
-              || document.body;
+  var twitch = /(^|\.)twitch\.tv$/i.test(location.hostname);
+  // Chaque site a son bouton ; celui de Twitch a change de nom plusieurs
+  // fois, d'ou la liste. Le premier trouve gagne.
+  var noms = twitch
+    ? ["button[data-a-target='player-theatre-mode-button']",
+       "button[aria-label*='héâtre']", "button[aria-label*='heater']",
+       "[data-a-target='player-theatre-mode-button']"]
+    : [".ytp-size-button"];
+  for (var i = 0; i < noms.length; i++) {
+    var b = document.querySelector(noms[i]);
+    if (b) { try { b.click(); return "bouton"; } catch (e) {} }
+  }
+  // Sans bouton, la touche : « t » sur YouTube, « alt+t » sur Twitch.
+  var cible = document.querySelector(
+    "#movie_player, .video-player, [data-a-target='video-player']")
+    || document.body;
   ["keydown", "keyup"].forEach(function (genre) {
     try {
       cible.dispatchEvent(new KeyboardEvent(genre, {
-        key: "t", code: "KeyT", keyCode: 84, which: 84,
+        key: "t", code: "KeyT", keyCode: 84, which: 84, altKey: twitch,
         bubbles: true, cancelable: true
       }));
     } catch (e) {}
   });
   return "touche";
+})();
+"""
+
+
+# Pose le mode theatre voulu sur une page YouTube, des que son lecteur est
+# la. La page met un instant a se monter : on reessaie, puis on abandonne
+# plutot que de tourner indefiniment.
+SCRIPT_POSER_THEATRE = r"""
+(function () {
+  var voulu = %s;
+  var essais = 0;
+  var minuteur = setInterval(function () {
+    essais += 1;
+    var cadre = document.querySelector("ytd-watch-flexy");
+    var bouton = document.querySelector(".ytp-size-button");
+    if (cadre && bouton) {
+      clearInterval(minuteur);
+      if (cadre.hasAttribute("theater") !== voulu) {
+        try { bouton.click(); } catch (e) {}
+      }
+    } else if (essais > 40) {
+      clearInterval(minuteur);
+    }
+  }, 250);
 })();
 """
 
@@ -1729,6 +1901,23 @@ JS = r"""
     }
   }
 
+  // Le mode theatre de YouTube : on retient le choix de qui regarde, pour
+  // le reposer a la video suivante. C'est la page qui le dit : l'attribut
+  // est sur son cadre, et il change aussi au clavier.
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(location.hostname)) {
+    var theatre_vu = null;
+    setInterval(function () {
+      var cadre = document.querySelector("ytd-watch-flexy");
+      if (!cadre) return;
+      var etat = cadre.hasAttribute("theater");
+      if (theatre_vu === null) { theatre_vu = etat; return; }
+      if (etat !== theatre_vu) {
+        theatre_vu = etat;
+        envoyer("theatre", { actif: etat });
+      }
+    }, 1000);
+  }
+
   // YouTube s'affiche parfois sans lecteur ni suggestions : une page vide,
   // que recharger a la main ranime. La page le constate elle-meme, quelques
   // secondes apres le chargement, et laisse Plume decider.
@@ -1770,6 +1959,10 @@ MARGE_BULLE = 14
 POINTE_BULLE = 8
 # Montree une fois par lancement, toutes fenetres confondues.
 _BULLE_LECTEUR_MONTREE = [False]
+# Un seul abonnement a la mise a jour du moteur, pour toute l'application.
+_MOTEUR_SURVEILLE = [False]
+# Vrai des que Plume a decide de repartir : on ne relance pas deux fois.
+_REPART = [False]
 
 
 # Entree d'un bandeau : il descend de 14 px en se devoilant. Joue a sa
@@ -1918,6 +2111,7 @@ class Onglet(object):
             # part aussi parce que c'est un module : il se coupe.
             if core.module_actif("ext_sans_pub"):
                 self.poser_sans_pub(noyau)
+            noyau.ProcessFailed += self.au_moteur_perdu
             noyau.WebMessageReceived += self.au_message
             noyau.NewWindowRequested += self.au_nouvelle_fenetre
             noyau.NavigationStarting += self.au_depart_navigation
@@ -1929,6 +2123,16 @@ class Onglet(object):
             noyau.FaviconChanged += self.au_favicon
             noyau.DownloadStarting += self.au_telechargement
             noyau.Settings.IsStatusBarEnabled = False
+            try:
+                # Windows met WebView2 a jour sans prevenir l'application :
+                # l'ancien moteur est alors congedie, et il faut repartir sur
+                # le nouveau. Un seul abonnement suffit, le premier onglet.
+                if not _MOTEUR_SURVEILLE[0]:
+                    _MOTEUR_SURVEILLE[0] = True
+                    noyau.Environment.NewBrowserVersionAvailable += \
+                        self.nav.au_nouveau_moteur
+            except Exception as e:
+                journal("surveillance du moteur : %r" % (e,))
             self.appliquer_confidentialite(noyau)
             # Un filtre par motif plutot qu'un filtre « * » : seules les
             # requetes visees declenchent l'evenement, le reste du trafic n'est
@@ -2169,6 +2373,31 @@ class Onglet(object):
         except Exception as e:
             journal("module sans pub : %r" % (e,))
 
+    def au_moteur_perdu(self, envoyeur, args):
+        """Un processus du moteur s'est arrete. Selon lequel, tout change.
+
+        Le rendu d'un onglet : lui seul est perdu, un rechargement suffit.
+        Le navigateur entier : toutes les pages sont mortes, et c'est ce qui
+        se voyait comme des fenetres vides sur tous les sites a la fois.
+        """
+        try:
+            genre = args.ProcessFailedKind
+        except Exception:
+            genre = None
+        journal("moteur perdu : %s sur %s" % (genre, str(self.url)[:60]))
+        try:
+            if genre in (CoreWebView2ProcessFailedKind.RenderProcessExited,
+                         CoreWebView2ProcessFailedKind.FrameRenderProcessExited,
+                         CoreWebView2ProcessFailedKind.RenderProcessUnresponsive):
+                self.nav.recharger_onglet(self)
+                return
+            if genre == CoreWebView2ProcessFailedKind.BrowserProcessExited:
+                # Plus aucune page ne peut rien afficher : inutile de poser
+                # un bandeau, il n'y a plus de page pour le porter.
+                self.nav.repartir_apres_le_moteur()
+        except Exception as e:
+            journal("moteur perdu : %r" % (e,))
+
     def au_requete(self, envoyeur, args):
         """Refuse les requetes publicitaires, sans meme les emettre."""
         if not core.module_actif("ext_sans_pub"):
@@ -2217,6 +2446,8 @@ class Onglet(object):
         try:
             if adresse == PARAMETRES.lower():
                 self.nav.ecrire_parametres()
+            elif adresse == HISTORIQUE.lower():
+                self.nav.ecrire_historique()
             elif adresse == ACCUEIL.lower():
                 self.nav.ecrire_accueil()
         except Exception as e:
@@ -4342,7 +4573,7 @@ class Navigateur(Form):
 
     def recharger_pages_locales(self):
         """Relit la page d'accueil et celle des parametres la ou elles sont."""
-        locales = (ACCUEIL.lower(), PARAMETRES.lower())
+        locales = (ACCUEIL.lower(), PARAMETRES.lower(), HISTORIQUE.lower())
         for onglet in list(self.onglets):
             if (onglet.url or "").lower() in locales:
                 self.recharger_onglet(onglet)
@@ -4409,6 +4640,16 @@ class Navigateur(Form):
         if cle == "oublier_mdp":
             self.oublier_mots_de_passe()
             return
+        if cle == "oublier_page":
+            self.oublier_page(valeur)
+            return
+        if cle == "effacer_historique":
+            self.effacer_historique()
+            self.signaler(core.t("hist_efface"), erreur=False)
+            return
+        if cle == "historique_ouvrir":
+            self.ouvrir_historique()
+            return
         if cle == "parametres":
             # La version, dans le coin de la page d'accueil, mene ici.
             self.ouvrir_parametres()
@@ -4434,7 +4675,7 @@ class Navigateur(Form):
         if cle not in ("moteur_recherche", "qualite_max", "veille_onglets",
                        "intro", "glissement_onglets", "ext_sans_pub",
                        "ext_lecteur_twitch", "ext_veille",
-                       "mots_de_passe", "remplissage"):
+                       "mots_de_passe", "remplissage", "historique"):
             journal("reglage inconnu : %s" % cle)
             return
         core.definir_reglage(cle, valeur)
@@ -4475,6 +4716,93 @@ class Navigateur(Form):
                             noyau.Reload()
             except Exception as e:
                 journal("changement de langue : %s" % e)
+
+    def ecrire_historique(self):
+        """Reecrit la page de l'historique, du plus recent au plus ancien."""
+        from datetime import datetime
+
+        aujourdhui = datetime.now().date()
+        lignes, jour_pose = [], None
+        for entree in self.historique[:800]:
+            quand = float(entree.get("quand") or 0)
+            date = datetime.fromtimestamp(quand) if quand else None
+            jour = date.date() if date else None
+            if jour != jour_pose:
+                jour_pose = jour
+                if jour is None:
+                    nom_jour = core.t("hist_sans_date")
+                elif jour == aujourdhui:
+                    nom_jour = core.t("hist_aujourdhui")
+                else:
+                    nom_jour = jour.strftime("%d/%m/%Y")
+                lignes.append('<div class="jour">%s</div>'
+                              % _echapper(nom_jour))
+            titre = entree.get("titre") or entree["url"]
+            lignes.append(
+                '<div class="ligne" data-cherche="%s">'
+                '<a href="%s">%s</a><span class="hote">%s</span>'
+                '<span class="heure">%s</span>'
+                '<button class="retirer" title="%s"'
+                ' onclick="oublier(this, %s)">&#10005;</button></div>'
+                % (_echapper((titre + " " + entree["url"]).lower()),
+                   _echapper(entree["url"]), _echapper(titre),
+                   _echapper(core.hote(entree["url"])),
+                   date.strftime("%H:%M") if date else "",
+                   _echapper(core.t("hist_oublier")),
+                   _echapper_js(entree["url"])))
+        if not lignes:
+            lignes = ['<div class="vide">%s</div>'
+                      % _echapper(core.t("hist_vide"))]
+
+        valeurs = dict(_palette_des_pages(), **{
+            "langue_page": core.langue(),
+            "titre": _echapper(core.t("hist_titre")),
+            "chercher": _echapper(core.t("hist_chercher")),
+            "reglages": _echapper(core.t("param_titre")),
+            "tout": _echapper(core.t("hist_tout_effacer")),
+            "note": _echapper(core.t("hist_note")),
+            "lignes": "".join(lignes),
+            "mot_page": json.dumps(core.t("hist_page")),
+            "mot_pages": json.dumps(core.t("hist_pages")),
+            "mot_vide": json.dumps(core.t("hist_vide")),
+            "confirmer": json.dumps(core.t("hist_confirmer")),
+        })
+        try:
+            core.FICHIER_PAGE_HISTORIQUE.write_text(
+                MODELE_HISTORIQUE % valeurs, encoding="utf-8")
+        except Exception as e:
+            journal("page de l'historique : %r" % (e,))
+
+    def ouvrir_historique(self):
+        """Montre l'historique : l'onglet qui l'affiche, ou un onglet neuf."""
+        self.fermer_reglages()
+        self.ecrire_historique()
+        for onglet in self.onglets:
+            if (onglet.url or "").lower() == HISTORIQUE.lower():
+                self.activer(onglet, glisser=True)
+                self.recharger_onglet(onglet)
+                return
+        self.nouvel_onglet(HISTORIQUE)
+
+    def oublier_page(self, adresse):
+        """Retire une page de l'historique, et rien d'autre."""
+        cle = str(adresse or "").rstrip("/")
+        if not cle:
+            return
+        self.historique = [e for e in self.historique
+                           if e["url"].rstrip("/") != cle]
+        core.enregistrer_historique(self.historique)
+        for fenetre in list(FENETRES):
+            if fenetre is not self:
+                fenetre.historique = list(self.historique)
+
+    def effacer_historique(self):
+        """Vide l'historique, pour de bon."""
+        self.historique = []
+        core.enregistrer_historique([])
+        for fenetre in list(FENETRES):
+            fenetre.historique = []
+        journal("historique efface")
 
     def ecrire_parametres(self):
         """Reecrit la page des parametres avec l'etat du moment."""
@@ -4636,6 +4964,13 @@ class Navigateur(Form):
             "nouveautes_aide": _echapper(core.t("param_nouveautes_aide")),
             "nouveautes": nouveautes,
             "profil_nom": _echapper(core.t("param_profil")),
+            "hist_nom": _echapper(core.t("param_historique")),
+            "hist_aide": _echapper(core.t("param_historique_aide")),
+            "hist_bascule": bascule("historique",
+                                    bool(cfg.get("historique", True))),
+            "hist_voir_nom": _echapper(core.t("param_historique_voir")),
+            "hist_voir_aide": _echapper(core.t("param_historique_voir_aide")),
+            "hist_voir_bouton": _echapper(core.t("param_historique_bouton")),
             "mdp_nom": _echapper(core.t("param_mdp")),
             "mdp_aide": _echapper(core.t("param_mdp_aide")),
             "mdp_bascule": bascule("mots_de_passe",
@@ -4686,6 +5021,24 @@ class Navigateur(Form):
             "Langue %s, theme %s" % (core.langue(), ui.accent_courant()),
             "Modules : %s" % modules,
         ))
+
+    def basculer_telechargements(self):
+        """Montre ou cache la fenetre des telechargements du moteur.
+
+        Elle s'ouvrait a chaque nouveau fichier et disparaissait ensuite sans
+        retour possible : il n'y avait aucun moyen de revoir ce qui avait ete
+        telecharge. Ctrl+J, comme dans les autres navigateurs.
+        """
+        try:
+            noyau = self.actif.vue.CoreWebView2 if self.actif else None
+            if noyau is None:
+                return
+            if noyau.IsDefaultDownloadDialogOpen:
+                noyau.CloseDefaultDownloadDialog()
+            else:
+                noyau.OpenDefaultDownloadDialog()
+        except Exception as e:
+            journal("telechargements : %r" % (e,))
 
     def ouvrir_parametres(self):
         """Montre la page des parametres : celle d'un onglet ouvert, ou une neuve."""
@@ -4770,13 +5123,29 @@ class Navigateur(Form):
             self.nouvel_onglet(demande)
         journal("session : %d onglet(s) repris" % len(onglets))
 
+    def poser_theatre(self, onglet):
+        """Remet le mode theatre voulu sur une page de lecture YouTube."""
+        adresse = onglet.url or ""
+        if "youtube.com/watch" not in adresse:
+            return
+        voulu = core.CONFIG.get("theatre_youtube")
+        if voulu is None:
+            return              # jamais choisi : on laisse YouTube decider
+        try:
+            noyau = onglet.vue.CoreWebView2
+            if noyau is not None:
+                noyau.ExecuteScriptAsync(
+                    SCRIPT_POSER_THEATRE % ("true" if voulu else "false"))
+        except Exception as e:
+            journal("mode theatre : %r" % (e,))
+
     def noter_historique(self, url, titre=""):
         """Retient une adresse visitee, la plus recente en tete.
 
         Les pages locales et la page d'accueil n'y entrent pas : elles ne
         servent a rien comme suggestion.
         """
-        if self.privee:
+        if self.privee or not core.CONFIG.get("historique", True):
             return
         if not url or not url.startswith(("http://", "https://")):
             return
@@ -4786,11 +5155,12 @@ class Navigateur(Form):
                 entree["vues"] += 1
                 if titre:
                     entree["titre"] = titre
+                entree["quand"] = time.time()
                 self.historique.insert(0, self.historique.pop(i))
                 break
         else:
             self.historique.insert(0, {"url": url, "titre": titre or url,
-                                       "vues": 1})
+                                       "vues": 1, "quand": time.time()})
         del self.historique[core.MAX_HISTORIQUE:]
         maintenant = time.time()
         if maintenant - self._historique_ecrit > 5.0:
@@ -6475,6 +6845,14 @@ class Navigateur(Form):
         # revient donc entierement a la page, sans etre absorbee.
         if args.Control and args.Alt:
             return
+        if args.Control and args.KeyCode == Keys.H:
+            args.SuppressKeyPress = True
+            self.ouvrir_historique()
+            return
+        if args.Control and args.KeyCode == Keys.J:
+            args.SuppressKeyPress = True
+            self.basculer_telechargements()
+            return
         if args.Control and args.KeyCode == Keys.Oemcomma:
             args.SuppressKeyPress = True
             self.ouvrir_parametres()
@@ -6563,6 +6941,10 @@ class Navigateur(Form):
             else:
                 self.ouvrir_groupe_travail(nom)
             return
+        if genre == "maj" and message.get("action") == "relancer":
+            # Le moteur a change sous Plume : on repart dessus.
+            self.repartir_apres_le_moteur()
+            return
         if genre == "maj" and message.get("action") == "nouveautes":
             # Le meme bandeau sert a annoncer les nouveautes : ce bouton-la
             # n'installe rien, il ouvre la page.
@@ -6586,6 +6968,11 @@ class Navigateur(Form):
             # Une pub retiree de la reponse du lecteur, ou sautee au vol :
             # elle compte avec les requetes refusees sur la page d'accueil.
             self.pubs_bloquees += 1
+            return
+        if genre == "theatre":
+            # Le mode theatre suit qui regarde, pas la video : on le retient
+            # pour le reposer sur la suivante.
+            core.definir_reglage("theatre_youtube", bool(message.get("actif")))
             return
         if genre == "page_vide":
             # La page s'est chargee sans rien montrer. Un rechargement la
@@ -6637,6 +7024,7 @@ class Navigateur(Form):
                 self.barre_nav.Invalidate()
                 if onglet.lecteur_site and core.est_chaine_twitch(onglet.url):
                     self.proposer_lecteur_plume()
+            self.poser_theatre(onglet)
         elif genre == "hors_video":
             onglet.incrustation.arreter()   # meme en arriere-plan : la page a change
         elif onglet is not self.actif:
@@ -6844,6 +7232,46 @@ class Navigateur(Form):
         # On se retire : l'installeur ne peut pas remplacer des fichiers
         # qu'un processus tient ouverts.
         self.quitter_pour_maj()
+
+    def au_nouveau_moteur(self, envoyeur, args):
+        """Le moteur de Windows vient d'etre mis a jour sous Plume.
+
+        L'ancien continue tant qu'il vit, mais il peut s'arreter a tout
+        instant, et alors les pages se vident. On previent, et on laisse
+        repartir d'un bouton.
+        """
+        journal("moteur : une nouvelle version est disponible")
+        try:
+            self.Invoke(Action(lambda: self.bandeau_maj(
+                core.t("moteur_neuf"), core.t("moteur_relancer"),
+                "relancer")))
+        except Exception as e:
+            journal("moteur neuf : %r" % (e,))
+
+    def repartir_apres_le_moteur(self):
+        """Enregistre la session et relance Plume : le moteur est mort.
+
+        Sans cela, la fenetre reste ouverte sur des pages vides, et rien
+        n'explique pourquoi. La session etant deja ce qui rouvre les onglets
+        au demarrage, on la reutilise telle quelle.
+        """
+        if _REPART[0]:
+            return                  # une seule fois, quoi qu'il arrive
+        _REPART[0] = True
+        journal("moteur perdu : Plume repart")
+        try:
+            self.enregistrer_session(force=True)
+        except Exception as e:
+            journal("session avant redemarrage : %r" % (e,))
+        try:
+            subprocess.Popen([core.EXECUTABLE],
+                             creationflags=core.CREATE_NO_WINDOW)
+        except Exception as e:
+            journal("redemarrage : %r" % (e,))
+        try:
+            self.Invoke(Action(lambda: Application.Exit()))
+        except Exception:
+            pass
 
     def quitter_pour_maj(self):
         """Ferme Plume pour laisser l'installeur travailler.
