@@ -8,6 +8,10 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- The gear panel now opens the history and the downloads directly, each with
+  its own icon, instead of leaving them to Ctrl+H and Ctrl+J.
+- The settings panes carry titles: interface and search, history, passwords
+  and forms, updates. Cards no longer stack without a word.
 - Clicking a suggestion really opens it now. The list was trying to activate
   itself, so Windows ate the click and the address bar took the focus back.
 - **The ad module now covers more than YouTube.** Known ad networks are

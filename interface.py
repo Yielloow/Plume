@@ -710,6 +710,29 @@ def etoile(graphiques, couleur, cx, cy, rayon, pleine=True,
     p.Dispose()
 
 
+def horloge(graphiques, couleur, cx, cy, rayon):
+    """Un cadran et deux aiguilles : l'historique, en une icone.
+
+    Tracee comme le reste, et non tiree d'une police : GDI+ ne rend pas les
+    polices d'icones de Windows, et une image serait un fichier de plus.
+    """
+    cercle(graphiques, couleur, cx, cy, rayon, 1.4)
+    trait(graphiques, couleur, cx, cy, cx, cy - rayon * 0.55, 1.4)
+    trait(graphiques, couleur, cx, cy, cx + rayon * 0.45, cy, 1.4)
+
+
+def fleche_descendante(graphiques, couleur, cx, cy, taille):
+    """Une fleche qui descend sur un socle : les telechargements."""
+    demi = taille / 2.0
+    trait(graphiques, couleur, cx, cy - demi, cx, cy + demi * 0.35, 1.5)
+    trait(graphiques, couleur, cx - demi * 0.5, cy - demi * 0.15,
+          cx, cy + demi * 0.35, 1.5)
+    trait(graphiques, couleur, cx + demi * 0.5, cy - demi * 0.15,
+          cx, cy + demi * 0.35, 1.5)
+    trait(graphiques, couleur, cx - demi * 0.75, cy + demi * 0.8,
+          cx + demi * 0.75, cy + demi * 0.8, 1.5)
+
+
 def roue_dentee(graphiques, couleur, cx, cy, rayon, dents=7):
     """Roue dentee, tracee plutot que tiree d'une police.
 

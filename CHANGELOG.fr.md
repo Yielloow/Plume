@@ -8,6 +8,11 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- Le panneau de la roue ouvre l'historique et les téléchargements, chacun
+  avec son icône, au lieu de les laisser à Ctrl+H et Ctrl+J.
+- Les volets des paramètres portent des titres : interface et recherche,
+  historique, mots de passe et formulaires, mises à jour. Les cartes ne
+  s'empilent plus sans un mot.
 - Cliquer une suggestion l'ouvre vraiment. La liste tentait de s'activer,
   Windows mangeait donc le clic et la barre d'adresse reprenait la main.
 - **Le module sans publicité ne regarde plus seulement YouTube.** Les régies

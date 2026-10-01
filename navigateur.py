@@ -597,6 +597,11 @@ MODELE_PARAMETRES = """<!doctype html>
       color:var(--texte3); margin:0 0 12px; font-weight:600; }
  .carte { background:var(--carte); border:1px solid var(--bord);
           border-radius:13px; overflow:hidden; }
+ /* Le titre d'une carte : plus discret que celui du volet, assez pour
+    qu'on sache de quoi parle ce qui suit. */
+ h3 { font-size:14px; font-weight:600; color:var(--texte); margin:22px 2px 9px;
+      letter-spacing:-0.2px; }
+ section > h3:first-of-type { margin-top:0; }
  .ligne { display:flex; align-items:center; gap:16px; padding:15px 18px;
           border-top:1px solid var(--bord); }
  .ligne:first-child { border-top:0; }
@@ -737,6 +742,7 @@ MODELE_PARAMETRES = """<!doctype html>
   <p class="rien" id="rien" style="display:none">%(rien)s</p>
   <section id="general">
    <h2>%(nav_general)s</h2>
+   <h3>%(t_interface)s</h3>
    <div class="carte">
     <div class="ligne">
      <div class="texte"><div class="nom">%(langue_nom)s</div></div>
@@ -760,7 +766,8 @@ MODELE_PARAMETRES = """<!doctype html>
     </div>
     %(ligne_defaut)s
    </div>
-   <div class="carte" style="margin-top:12px">
+   <h3>%(t_historique)s</h3>
+   <div class="carte">
     <div class="ligne">
      <div class="texte"><div class="nom">%(hist_nom)s</div>
       <div class="aide">%(hist_aide)s</div></div>
@@ -772,7 +779,8 @@ MODELE_PARAMETRES = """<!doctype html>
      <button class="bouton" onclick="dire('historique_ouvrir', true)">%(hist_voir_bouton)s</button>
     </div>
    </div>
-   <div class="carte" style="margin-top:12px">
+   <h3>%(t_mdp)s</h3>
+   <div class="carte">
     <div class="ligne">
      <div class="texte"><div class="nom">%(mdp_nom)s</div>
       <div class="aide">%(mdp_aide)s</div></div>
@@ -789,13 +797,14 @@ MODELE_PARAMETRES = """<!doctype html>
      <button class="bouton" onclick="dire('oublier_mdp', true)">%(mdp_oubli_bouton)s</button>
     </div>
    </div>
-   <div class="carte" style="margin-top:12px">
+   <div class="carte" style="margin-top:10px">
     <div class="ligne"><div class="texte">
      <div class="nom">%(comptes_nom)s</div>
      <div class="aide">%(comptes_aide)s</div></div></div>
     %(comptes)s
    </div>
-   <p class="note">%(note_maj)s</p>
+   <h3>%(t_maj)s</h3>
+   <p class="note" style="margin:0 2px 10px">%(note_maj)s</p>
    <div class="carte">
     <div class="ligne">
      <div class="texte"><div class="nom">%(maj_nom)s</div>
@@ -812,6 +821,7 @@ MODELE_PARAMETRES = """<!doctype html>
 
   <section id="apparence">
    <h2>%(nav_apparence)s</h2>
+   <h3>%(t_couleur)s</h3>
    <div class="carte">
     <div class="ligne" style="display:block">
      <div class="nom">%(theme_nom)s</div>
@@ -856,6 +866,7 @@ MODELE_PARAMETRES = """<!doctype html>
 
   <section id="apropos">
    <h2>%(nav_apropos)s</h2>
+   <h3>%(t_version)s</h3>
    <div class="carte">
     <div class="ligne"><div class="texte apropos">
      <div><b>Plume %(version)s</b></div>
@@ -5211,6 +5222,12 @@ class Navigateur(Form):
             "modules": modules,
             "version": _echapper(core.VERSION),
             "nav_nouveautes": _echapper(core.t("param_nouveautes")),
+            "t_interface": _echapper(core.t("titre_interface")),
+            "t_historique": _echapper(core.t("hist_titre")),
+            "t_mdp": _echapper(core.t("titre_mdp")),
+            "t_maj": _echapper(core.t("titre_maj")),
+            "t_couleur": _echapper(core.t("param_theme")),
+            "t_version": _echapper(core.t("titre_version")),
             "chercher": _echapper(core.t("param_chercher")),
             "rien": _echapper(core.t("param_rien_trouve")),
             "comptes_nom": _echapper(core.t("param_comptes")),
@@ -5916,6 +5933,14 @@ class Navigateur(Form):
                   "texte": core.t("reglages_glissement"),
                   "valeur": bool(cfg.get("glissement_onglets", True))}]
         items.append({"genre": "separateur"})
+        # Ce qu'on ouvre souvent, a portee de la roue : sans cela, l'un
+        # n'etait joignable que par Ctrl+H et l'autre par Ctrl+J, ce qui
+        # suppose de savoir qu'ils existent.
+        items.append({"genre": "action", "cle": "historique",
+                      "texte": core.t("hist_titre")})
+        items.append({"genre": "action", "cle": "telechargements",
+                      "texte": core.t("reglages_telechargements")})
+        items.append({"genre": "separateur"})
         items.append({"genre": "page", "texte": core.t("param_ouvrir")})
         items.append({"genre": "maj", "texte": core.t("reglages_maj")})
         # Une fois Plume choisie, le bouton n'a plus rien a proposer : il
@@ -6045,6 +6070,17 @@ class Navigateur(Form):
             if survole:
                 ui.remplir_arrondi(g, ui.ONGLET_SURVOL, 4, y, largeur - 8,
                                    h, 7)
+            if genre == "action":
+                # Une entree de menu : une icone, un mot, et rien autour.
+                couleur = ui.TEXTE if survole else ui.TEXTE2
+                milieu = y + h / 2.0
+                if item.get("cle") == "historique":
+                    ui.horloge(g, couleur, 26, milieu, 7)
+                else:
+                    ui.fleche_descendante(g, couleur, 26, milieu, 14)
+                ui.texte_tronque(g, item["texte"], self.police, couleur,
+                                 44, y + (h - 16) // 2, largeur - 60, 16)
+                continue
             if genre in ("defaut", "maj", "page"):
                 ui.remplir_arrondi(g, ui.ACCENT if survole else ui.CHAMP_FOND,
                                    14, y + 5, largeur - 28, h - 10, 9)
@@ -6146,6 +6182,12 @@ class Navigateur(Form):
             self.verifier_maj_maintenant()
         elif genre == "page":
             self.ouvrir_parametres()
+        elif genre == "action":
+            self.fermer_reglages()
+            if item.get("cle") == "historique":
+                self.ouvrir_historique()
+            else:
+                self.basculer_telechargements()
 
     def _menu_de_choix(self, item, bas_de_ligne):
         """Deroule les valeurs possibles, avec le menu deja en place.
