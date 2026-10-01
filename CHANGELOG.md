@@ -8,6 +8,13 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- The settings are panes now, not one long page: the column on the left picks
+  the one you see, the address remembers it, and a search box finds a setting
+  across all of them.
+- Selecting part of the address with the mouse no longer snaps back to
+  selecting all of it on release.
+- Clicking a suggestion in the address bar list now opens it. Only Enter
+  worked before.
 - A history page: search it, forget a single page, or clear everything. It
   can be switched off entirely, and a private window still writes nothing.
   Ctrl+H opens it.

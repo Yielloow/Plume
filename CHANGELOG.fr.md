@@ -8,6 +8,13 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- Les paramètres sont en volets, et non plus en une seule longue page : la
+  colonne de gauche choisit celui qu'on voit, l'adresse le retient, et une
+  recherche trouve un réglage dans n'importe lequel.
+- Sélectionner un bout d'adresse à la souris ne resélectionne plus tout au
+  relâchement.
+- Cliquer une suggestion de la barre d'adresse l'ouvre enfin. Seule la touche
+  Entrée fonctionnait.
 - Une page d'historique : chercher dedans, oublier une page, ou tout
   effacer. Il peut être coupé entièrement, et une fenêtre privée n'y écrit
   toujours rien. Ctrl+H l'ouvre.

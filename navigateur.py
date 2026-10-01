@@ -545,9 +545,25 @@ MODELE_PARAMETRES = """<!doctype html>
  nav { position:sticky; top:48px; align-self:start; display:flex;
        flex-direction:column; gap:2px; }
  nav a { color:var(--texte2); text-decoration:none; padding:9px 12px;
-         border-radius:9px; font-size:14px; }
+         border-radius:9px; font-size:14px; cursor:pointer;
+         border:1px solid transparent; }
  nav a:hover { background:var(--carte); color:var(--texte); }
- section { margin-bottom:34px; }
+ /* Le volet ouvert se designe dans la colonne, comme un onglet choisi. */
+ nav a.ouvert { background:color-mix(in srgb, var(--accent) 16%%, var(--carte));
+                border-color:var(--accent); color:var(--texte); }
+ nav .chercher { margin-bottom:10px; width:100%%; background:var(--carte);
+                 color:var(--texte); font:inherit; font-size:13px;
+                 border:1px solid var(--bord); border-radius:9px;
+                 padding:8px 11px; outline:none; }
+ nav .chercher:focus { border-color:var(--accent); }
+ /* Un seul volet a la fois, sauf en recherche ou tout ce qui repond
+    s'affiche, d'ou qu'il vienne. */
+ section { margin-bottom:34px; display:none; }
+ section.ouvert { display:block; }
+ body.cherche section { display:block; }
+ body.cherche .ligne.absente, body.cherche .carte.absente,
+ body.cherche section.absente, body.cherche .note.absente { display:none; }
+ .rien { color:var(--texte3); font-size:14px; padding:18px 2px; }
  h2 { font-size:12px; letter-spacing:1.4px; text-transform:uppercase;
       color:var(--texte3); margin:0 0 12px; font-weight:600; }
  .carte { background:var(--carte); border:1px solid var(--bord);
@@ -679,13 +695,17 @@ MODELE_PARAMETRES = """<!doctype html>
   <h1>%(titre)s</h1>
  </header>
  <nav>
-  <a href="#general">%(nav_general)s</a>
-  <a href="#apparence">%(nav_apparence)s</a>
-  <a href="#modules">%(nav_modules)s</a>
-  <a href="#nouveautes">%(nav_nouveautes)s</a>
-  <a href="#apropos">%(nav_apropos)s</a>
+  <input class="chercher" type="search" id="chercher"
+         placeholder="%(chercher)s" autocomplete="off"
+         oninput="chercher(this.value)">
+  <a data-volet="general" onclick="ouvrir('general')">%(nav_general)s</a>
+  <a data-volet="apparence" onclick="ouvrir('apparence')">%(nav_apparence)s</a>
+  <a data-volet="modules" onclick="ouvrir('modules')">%(nav_modules)s</a>
+  <a data-volet="nouveautes" onclick="ouvrir('nouveautes')">%(nav_nouveautes)s</a>
+  <a data-volet="apropos" onclick="ouvrir('apropos')">%(nav_apropos)s</a>
  </nav>
  <main>
+  <p class="rien" id="rien" style="display:none">%(rien)s</p>
   <section id="general">
    <h2>%(nav_general)s</h2>
    <div class="carte">
@@ -851,6 +871,74 @@ MODELE_PARAMETRES = """<!doctype html>
        {type: "reglage", cle: cle, valeur: valeur}));
    } catch (e) {}
  }
+ function ouvrir(nom) {
+   // L'adresse retient le volet : un rechargement, ou un lien venu de
+   // Plume vers #nouveautes, retombe au bon endroit.
+   var volets = document.querySelectorAll("main section");
+   var connu = false;
+   for (var i = 0; i < volets.length; i++) {
+     var ouvert = (volets[i].id === nom);
+     volets[i].classList.toggle("ouvert", ouvert);
+     connu = connu || ouvert;
+   }
+   if (!connu) return ouvrir("general");
+   var entrees = document.querySelectorAll("nav a[data-volet]");
+   for (var j = 0; j < entrees.length; j++) {
+     entrees[j].classList.toggle(
+       "ouvert", entrees[j].getAttribute("data-volet") === nom);
+   }
+   if (location.hash !== "#" + nom) {
+     try { history.replaceState(null, "", "#" + nom); } catch (e) {}
+   }
+   document.scrollingElement.scrollTop = 0;
+ }
+ function chercher(texte) {
+   var mots = texte.toLowerCase().split(/\s+/).filter(Boolean);
+   document.body.classList.toggle("cherche", mots.length > 0);
+   if (!mots.length) {
+     // Retour a la normale : on remet le volet choisi, et rien n'est masque.
+     var caches = document.querySelectorAll(".absente");
+     for (var k = 0; k < caches.length; k++) caches[k].classList.remove("absente");
+     document.getElementById("rien").style.display = "none";
+     ouvrir((location.hash || "#general").slice(1));
+     return;
+   }
+   var trouve = 0;
+   var sections = document.querySelectorAll("main section");
+   for (var s = 0; s < sections.length; s++) {
+     var vus = 0;
+     var cartes = sections[s].querySelectorAll(".carte");
+     for (var c = 0; c < cartes.length; c++) {
+       var vus_carte = 0;
+       var lignes = cartes[c].querySelectorAll(".ligne");
+       for (var l = 0; l < lignes.length; l++) {
+         var foin = (lignes[l].textContent || "").toLowerCase();
+         var bon = true;
+         for (var m = 0; m < mots.length; m++) {
+           if (foin.indexOf(mots[m]) === -1) { bon = false; break; }
+         }
+         lignes[l].classList.toggle("absente", !bon);
+         if (bon) vus_carte += 1;
+       }
+       cartes[c].classList.toggle("absente", vus_carte === 0);
+       vus += vus_carte;
+     }
+     // Les notes et les listes sans ligne suivent leur section.
+     var notes = sections[s].querySelectorAll(".note");
+     for (var n = 0; n < notes.length; n++) {
+       notes[n].classList.toggle("absente", vus === 0);
+     }
+     sections[s].classList.toggle("absente", vus === 0);
+     trouve += vus;
+   }
+   document.getElementById("rien").style.display = trouve ? "none" : "";
+ }
+ addEventListener("hashchange", function () {
+   if (!document.body.classList.contains("cherche")) {
+     ouvrir((location.hash || "#general").slice(1));
+   }
+ });
+ ouvrir((location.hash || "#general").slice(1));
  function basculer(bouton, cle) {
    var oui = !bouton.classList.contains("oui");
    bouton.classList.toggle("oui", oui);
@@ -2689,6 +2777,7 @@ class Navigateur(Form):
         self.historique = core.charger_historique()
         self._historique_ecrit = 0.0
         self._suggestions = []        # ce que la liste propose en ce moment
+        self._dernieres_suggestions = []   # la derniere liste affichee
         self._choix_suggestion = -1   # -1 : aucune, on garde la saisie
         self._survol_suggestion = -1
         self._liste = None            # fenetre de la liste, creee au besoin
@@ -2879,8 +2968,13 @@ class Navigateur(Form):
         self.barre_nav.Invalidate()
 
     def champ_souris_relachee(self, envoyeur, args):
-        if self._selection_champ:
-            self._selection_champ = False
+        if not self._selection_champ:
+            return
+        self._selection_champ = False
+        # Rien de choisi : c'est un clic simple, on prend toute l'adresse,
+        # comme ailleurs. Mais si la souris a trace une selection, elle
+        # l'emporte : la reecraser obligeait a recommencer son geste.
+        if self.champ.SelectionLength == 0:
             self.champ.SelectAll()
 
     def rect_champ(self):
@@ -3472,6 +3566,9 @@ class Navigateur(Form):
         fenetre. Meme contrainte que pour le lecteur mpv.
         """
         self._suggestions = self.calculer_suggestions(self.champ.Text)
+        # Gardee telle quelle : c'est elle que le clic consultera si la liste
+        # a ete videe entre-temps.
+        self._dernieres_suggestions = list(self._suggestions)
         self._choix_suggestion = -1
         self._survol_suggestion = -1
         if not self._suggestions or not self.champ.Focused:
@@ -3508,7 +3605,9 @@ class Navigateur(Form):
             liste.BackColor = ui.FOND_NAV
             liste.Paint += self._peindre_suggestions
             liste.MouseMove += self._souris_suggestions
-            liste.MouseClick += self._clic_suggestions
+            # A l'appui, et non au clic : la liste se vide entre les deux,
+            # et le clic arrivait alors sur une liste sans lignes.
+            liste.MouseDown += self._clic_suggestions
             liste.MouseLeave += self._sortie_suggestions
             ui.double_tampon(liste)
             poignee = liste.Handle.ToInt64()
@@ -3562,9 +3661,10 @@ class Navigateur(Form):
             ui.texte_tronque(g, core.resume_url(url), self.police_petite,
                              ui.TEXTE2, 34, y + 17, largeur - 44, 14)
 
-    def _ligne_sous(self, y):
+    def _ligne_sous(self, y, parmi=None):
+        parmi = self._suggestions if parmi is None else parmi
         i = (y - 4) // H_SUGGESTION
-        return i if 0 <= i < len(self._suggestions) else -1
+        return i if 0 <= i < len(parmi) else -1
 
     def _souris_suggestions(self, envoyeur, args):
         i = self._ligne_sous(args.Y)
@@ -3578,10 +3678,13 @@ class Navigateur(Form):
             envoyeur.Invalidate()
 
     def _clic_suggestions(self, envoyeur, args):
-        i = self._ligne_sous(args.Y)
+        # Sur la copie de ce qui est affiche : la liste a pu etre videe par la
+        # perte de focus avant que l'appui ne nous parvienne.
+        affichees = self._suggestions or self._dernieres_suggestions
+        i = self._ligne_sous(args.Y, affichees)
         if i < 0:
             return
-        url = self._suggestions[i][1]
+        url = affichees[i][1]
         self.cacher_suggestions()
         self.aller(url)
 
@@ -4958,6 +5061,8 @@ class Navigateur(Form):
             "modules": modules,
             "version": _echapper(core.VERSION),
             "nav_nouveautes": _echapper(core.t("param_nouveautes")),
+            "chercher": _echapper(core.t("param_chercher")),
+            "rien": _echapper(core.t("param_rien_trouve")),
             "comptes_nom": _echapper(core.t("param_comptes")),
             "comptes_aide": _echapper(core.t("param_comptes_aide")),
             "comptes": comptes,
