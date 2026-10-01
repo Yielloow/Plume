@@ -8,6 +8,8 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- Clicking a suggestion really opens it now. The list was trying to activate
+  itself, so Windows ate the click and the address bar took the focus back.
 - **The ad module now covers more than YouTube.** Known ad networks are
   refused before the request leaves, pop-unders are blocked (a click on a
   page only opens a window if it came from a link or a button, or stays on

@@ -3760,6 +3760,13 @@ class Navigateur(Form):
             style = _lire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE)
             _ecrire_style(ctypes.c_void_p(poignee), GWL_EXSTYLE,
                           int(style) | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE)
+            # WS_EX_NOACTIVATE ne suffit pas : WinForms repond lui-meme a
+            # WM_MOUSEACTIVATE, la liste tentait donc de s'activer et Windows
+            # mangeait le clic. Il n'arrivait jamais a la ligne visee, et la
+            # barre d'adresse reprenait la main en selectionnant tout. Le
+            # panneau des parametres, le menu et la bulle passaient deja par
+            # ici ; la liste avait ete oubliee.
+            rendre_inactivable(liste)
             return liste
         except Exception as e:
             journal("suggestions : %s" % e)

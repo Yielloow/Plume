@@ -8,6 +8,8 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- Cliquer une suggestion l'ouvre vraiment. La liste tentait de s'activer,
+  Windows mangeait donc le clic et la barre d'adresse reprenait la main.
 - **Le module sans publicité ne regarde plus seulement YouTube.** Les régies
   connues sont refusées avant même que la requête ne parte, les fenêtres qui
   s'ouvrent derrière sont bloquées (un clic n'ouvre une fenêtre que s'il part
