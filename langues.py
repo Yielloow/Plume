@@ -50,9 +50,7 @@ TEXTES = {
         "accueil_changer_teinte": "Changer les couleurs du groupe",
         "accueil_teinte": "Choisir cette couleur",
         "accueil_valider_teintes": "Valider",
-        "accueil_pubs": "%d requête%s publicitaire%s refusée%s depuis le "
-                        "lancement",
-        "accueil_defaut": "Faire de Plume le navigateur par défaut",
+        "accueil_pubs": "%d publicité%s bloquée%s depuis le lancement",
         "accueil_defaut_aide": "Windows ne laisse aucun programme se désigner "
                                "lui-même : le bouton ouvre la page des "
                                "Paramètres où vous pouvez le choisir.",
@@ -252,7 +250,7 @@ TEXTES = {
         "accueil_changer_teinte": "Change the group colours",
         "accueil_teinte": "Pick this colour",
         "accueil_valider_teintes": "Apply",
-        "accueil_pubs": "%d advertising request%s refused since launch",
+        "accueil_pubs": "%d ad%s blocked since launch",
         "accueil_defaut": "Make Plume the default browser",
         "accueil_defaut_aide": "Windows lets no program appoint itself: this "
                                "button opens the Settings page where you can "
@@ -419,7 +417,7 @@ TEXTES = {
 # l'autre : en francais elles suivent le nom ET l'adjectif, en anglais le nom
 # seul. Chaque langue dit donc combien de marques elle attend et ou.
 PLURIELS = {
-    "accueil_pubs": {"fr": 3, "en": 1},
+    "accueil_pubs": {"fr": 2, "en": 1},
     "groupe_ouvert": {"fr": 2, "en": 1},
 }
 

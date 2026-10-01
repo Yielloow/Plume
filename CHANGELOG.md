@@ -8,6 +8,11 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- **The ad module now covers more than YouTube.** Known ad networks are
+  refused before the request leaves, pop-unders are blocked (a click on a
+  page only opens a window if it came from a link or a button, or stays on
+  the same site), links pointing straight at an ad network go nowhere, and
+  known ad slots are hidden. Still one switch, still off in one click.
 - The settings are panes now, not one long page: the column on the left picks
   the one you see, the address remembers it, and a search box finds a setting
   across all of them.

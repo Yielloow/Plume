@@ -8,6 +8,12 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- **Le module sans publicité ne regarde plus seulement YouTube.** Les régies
+  connues sont refusées avant même que la requête ne parte, les fenêtres qui
+  s'ouvrent derrière sont bloquées (un clic n'ouvre une fenêtre que s'il part
+  d'un lien ou d'un bouton, ou s'il reste sur le même site), les liens qui
+  mènent droit à une régie ne vont nulle part, et les emplacements connus
+  sont cachés. Toujours un seul interrupteur.
 - Les paramètres sont en volets, et non plus en une seule longue page : la
   colonne de gauche choisit celui qu'on voit, l'adresse le retient, et une
   recherche trouve un réglage dans n'importe lequel.

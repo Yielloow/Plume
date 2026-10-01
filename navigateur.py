@@ -144,22 +144,51 @@ EPOCH = DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)
 
 # Requetes publicitaires et de pistage, bloquees avant meme d'etre emises.
 # Les motifs sont ceux acceptes par WebView2 : * remplace n'importe quoi.
-MOTIFS_PUBS = [
-    "*://*.doubleclick.net/*",
-    "*://*.googlesyndication.com/*",
-    "*://*.googleadservices.com/*",
-    "*://*.google-analytics.com/*",
-    "*://*.adservice.google.*/*",
-    "*://*.moatads.com/*",
-    "*://*.scorecardresearch.com/*",
+# Les regies publicitaires, par leur nom de domaine. Elles servent deux
+# fois : a refuser leurs requetes, et a reconnaitre une fenetre ouverte vers
+# elles. Seuls des hotes figurent ici, jamais un mot comme « ad » : il vit
+# dans « header », « add » ou « download », et une regle pareille casse des
+# sites entiers.
+HOTES_PUBS = (
+    # Les grandes regies
+    "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+    "google-analytics.com", "googletagservices.com", "moatads.com",
+    "scorecardresearch.com", "amazon-adsystem.com", "adnxs.com",
+    "criteo.com", "criteo.net", "taboola.com", "outbrain.com",
+    "pubmatic.com", "rubiconproject.com", "openx.net", "adform.net",
+    "smartadserver.com", "casalemedia.com", "sharethrough.com",
+    "teads.tv", "adroll.com", "quantserve.com", "bluekai.com",
+    "demdex.net", "everesttech.net", "bidswitch.net", "lijit.com",
+    "indexww.com", "media.net", "zedo.com", "33across.com",
+    "yieldmo.com", "districtm.io", "sonobi.com", "gumgum.com",
+    "adsrvr.org", "agkn.com", "mathtag.com", "turn.com",
+    # Celles qui ouvrent des fenetres derriere la fenetre, le fleau des
+    # sites de streaming
+    "popads.net", "popcash.net", "propellerads.com", "propellerclick.com",
+    "propu.sh", "adsterra.com", "highperformanceformat.com",
+    "exoclick.com", "exosrv.com", "juicyads.com", "hilltopads.net",
+    "clickadu.com", "adcash.com", "mgid.com", "revcontent.com",
+    "trafficjunky.net", "onclickalgo.com", "onclckprd.com",
+    "poptm.com", "popunder.net", "adserving.com", "adsmoloco.com",
+    "clicksgear.com", "clickiocdn.com", "bettercpm.com", "ad-maven.com",
+    "adskeeper.com", "waust.at", "luckyforbet.com", "cpmrevenuegate.com",
+)
+
+MOTIFS_PUBS = ["*://*.%s/*" % hote for hote in HOTES_PUBS] + [
+    # Et quelques chemins, qui valent sur n'importe quel hote.
     "*://*/pagead/*",
     "*://*/ptracking*",
     "*://*.youtube.com/api/stats/ads*",
     "*://*.youtube.com/get_midroll_info*",
     "*://*.youtube.com/youtubei/v1/player/ad_break*",
     "*://*.twitch.tv/*/ads*",
-    "*://*.amazon-adsystem.com/*",
 ]
+
+# La meme liste, pour la page. Les points partent doublement echappes : le
+# script les pose dans une chaine JavaScript, qui en mange un niveau avant
+# que l'expression reguliere ne voie le sien.
+MOTIF_HOTES_JS = "|".join(h.replace(".", "\\\\.") for h in HOTES_PUBS)
+
 
 class POINT_WIN(ctypes.Structure):
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
@@ -1655,9 +1684,120 @@ SCRIPT_SUIVANT = r"""
 JS_SANS_PUB = r"""
 (function () {
   var hote = location.hostname;
-  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(hote)) return;
   if (window.__plume_sans_pub) return;
   window.__plume_sans_pub = true;
+
+  var REGIES = new RegExp("(^|\\.)(__HOTES__)$", "i");
+
+  function compter() {
+    try {
+      window.chrome.webview.postMessage(JSON.stringify({type: "pub"}));
+    } catch (e) {}
+  }
+
+  function hote_de(adresse) {
+    try { return new URL(adresse, location.href).hostname; }
+    catch (e) { return ""; }
+  }
+
+  function meme_maison(adresse) {
+    // Deux hotes de la meme maison : « a.site.com » et « site.com ». On
+    // compare les deux derniers morceaux, ce qui suffit ici et ne demande
+    // pas la liste des suffixes publics.
+    var la = hote_de(adresse).split(".").slice(-2).join(".");
+    var ici = hote.split(".").slice(-2).join(".");
+    return la && la === ici;
+  }
+
+  // --- 1. Les fenetres qui s'ouvrent toutes seules.
+  // Le tour est connu : un clic n'importe ou sur la page, et une fenetre
+  // s'ouvre derriere celle qu'on regarde. On ne laisse passer que ce qui
+  // part d'un vrai lien, ou ce qui reste sur le meme site.
+  // Un vrai geste, c'est un clic sur quelque chose qui se clique : un lien,
+  // un bouton, un champ. La fenetre derriere la fenetre, elle, s'ouvre sur
+  // un clic n'importe ou, souvent sur une surcouche transparente. Les
+  // connexions « se connecter avec... » passent par un bouton : les
+  // refuser casserait des sites entiers.
+  var dernier_geste = 0;
+  addEventListener("mousedown", function (e) {
+    var n = e.target, vrai = false;
+    while (n && n !== document) {
+      var nom = n.tagName;
+      if ((nom === "A" && n.getAttribute("href")) || nom === "BUTTON" ||
+          nom === "INPUT" || nom === "LABEL" || nom === "SELECT" ||
+          (n.getAttribute && n.getAttribute("role") === "button")) {
+        vrai = true;
+        break;
+      }
+      n = n.parentNode || (n.getRootNode && n.getRootNode().host);
+    }
+    dernier_geste = vrai ? Date.now() : 0;
+  }, true);
+
+  // Un lien qui mene droit a une regie : le clic ne va nulle part. C'est
+  // ainsi que sont faites les surcouches posees sur les lecteurs video.
+  addEventListener("click", function (e) {
+    var n = e.target;
+    while (n && n !== document) {
+      if (n.tagName === "A" && n.href && REGIES.test(hote_de(n.href))) {
+        e.preventDefault();
+        e.stopPropagation();
+        compter();
+        return;
+      }
+      n = n.parentNode || (n.getRootNode && n.getRootNode().host);
+    }
+  }, true);
+
+  var ouvrir_vrai = window.open;
+  var fausse = {
+    closed: true, opener: null, focus: function () {}, blur: function () {},
+    close: function () {}, postMessage: function () {},
+    location: { href: "", replace: function () {}, assign: function () {} },
+    document: { write: function () {}, writeln: function () {},
+                close: function () {}, open: function () {} }
+  };
+  window.open = function (adresse) {
+    try {
+      var vers_une_regie = REGIES.test(hote_de(adresse || ""));
+      var demandee = (Date.now() - dernier_geste) < 1200;
+      if (vers_une_regie || (!demandee && !meme_maison(adresse || ""))) {
+        compter();
+        return fausse;
+      }
+    } catch (e) {}
+    return ouvrir_vrai.apply(window, arguments);
+  };
+
+  // --- 2. Les cadres publicitaires, caches.
+  // Uniquement des emplacements nommes : un selecteur trop large ferait
+  // disparaitre des morceaux de site.
+  var CACHE = [
+    "ins.adsbygoogle", ".adsbygoogle",
+    "[id^='google_ads_']", "[id^='div-gpt-ad']", "[id^='gpt-ad']",
+    "iframe[src*='doubleclick.net']", "iframe[src*='googlesyndication']",
+    "iframe[src*='googleadservices']", "iframe[src*='adnxs']",
+    "iframe[src*='amazon-adsystem']", "iframe[src*='criteo']",
+    "iframe[src*='taboola']", "iframe[src*='outbrain']",
+    "iframe[src*='exoclick']", "iframe[src*='juicyads']",
+    "iframe[src*='adsterra']", "iframe[src*='popads']",
+    "iframe[src*='mgid.com']", "iframe[src*='revcontent']",
+    "[id='taboola-below-article-thumbnails']", ".trc_related_container",
+    ".OUTBRAIN", ".ob-widget"
+  ].join(",") + "{display:none!important}";
+
+  function poser_style() {
+    try {
+      var st = document.createElement("style");
+      st.textContent = CACHE;
+      (document.head || document.documentElement).appendChild(st);
+    } catch (e) {}
+  }
+  if (document.documentElement) poser_style();
+  else addEventListener("readystatechange", poser_style, {once: true});
+
+  // --- 3. Le lecteur de YouTube, qui demande son propre traitement.
+  if (!/(^|\.)youtube(-nocookie)?\.com$/.test(hote)) return;
 
   // Une fois par page : YouTube relit plusieurs fois la meme reponse, et
   // chaque lecture retirait les memes pubs. Mesure faite, seize signalements
@@ -2199,6 +2339,8 @@ class Onglet(object):
             # part aussi parce que c'est un module : il se coupe.
             if core.module_actif("ext_sans_pub"):
                 self.poser_sans_pub(noyau)
+            # Le script porte la liste des regies : elle est posee une fois,
+            # a l'injection, plutot que repetee dans le code de la page.
             noyau.ProcessFailed += self.au_moteur_perdu
             noyau.WebMessageReceived += self.au_message
             noyau.NewWindowRequested += self.au_nouvelle_fenetre
@@ -2439,7 +2581,8 @@ class Onglet(object):
             noyau = noyau if noyau is not None else self.vue.CoreWebView2
             if noyau is None or self._id_sans_pub is not None:
                 return
-            tache = noyau.AddScriptToExecuteOnDocumentCreatedAsync(JS_SANS_PUB)
+            tache = noyau.AddScriptToExecuteOnDocumentCreatedAsync(
+                JS_SANS_PUB.replace("__HOTES__", MOTIF_HOTES_JS))
 
             def retenir(terminee):
                 try:
