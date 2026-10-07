@@ -8,6 +8,12 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- **L'astuce des fenêtres de streaming est bloquée.** Ces sites chargent leur
+  propre script, qui écoute tous les clics de la page et ouvre une publicité
+  sur le même geste que le lien qu'on voulait suivre. Une fenêtre ouverte
+  pendant le clic d'un lien doit désormais mener là où ce lien menait, ou
+  rester sur le site ; le reste est refusé. Les boutons ne sont pas touchés,
+  donc les connexions en fenêtre marchent toujours.
 - **Une publicité se reconnaît maintenant à sa forme, et plus seulement à son
   nom.** Les régies de streaming changent de domaine tous les jours, mais
   leurs adresses portent toujours les mêmes marques : afu.php, clickid,

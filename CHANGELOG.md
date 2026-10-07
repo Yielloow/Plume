@@ -8,6 +8,11 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- **The streaming pop-up trick is blocked.** Those sites load their own script
+  that listens to every click on the page and opens an ad on the same gesture
+  as the link you actually wanted. A window opened while you were clicking a
+  link must now lead where that link led, or stay on the site; anything else
+  is refused. Buttons are untouched, so sign-in pop-ups still work.
 - **Ads are now recognised by their shape, not just their name.** Streaming ad
   networks change domain every day, but their addresses always carry the same
   marks: afu.php, clickid, extclickid, zoneid, cost, tsid. Those addresses are

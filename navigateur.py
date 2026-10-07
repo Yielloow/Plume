@@ -173,6 +173,7 @@ HOTES_PUBS = (
     "trafficjunky.net", "onclickalgo.com", "onclckprd.com",
     "poptm.com", "popunder.net", "adserving.com", "adsmoloco.com",
     "clicksgear.com", "clickiocdn.com", "bettercpm.com", "ad-maven.com",
+    "araplhn.org", "gamboneresect.com",
     "adskeeper.com", "waust.at", "luckyforbet.com", "cpmrevenuegate.com",
 )
 
@@ -1807,12 +1808,25 @@ JS_SANS_PUB = r"""
   // connexions « se connecter avec... » passent par un bouton : les
   // refuser casserait des sites entiers.
   var dernier_geste = 0;
+  var geste_sur_lien = "";      // l'hote du lien clique, s'il y en avait un
   addEventListener("mousedown", function (e) {
-    var n = e.target, vrai = false;
+    var n = e.target, vrai = false, lien = "";
     while (n && n !== document) {
       var nom = n.tagName;
-      if ((nom === "A" && n.getAttribute("href")) || nom === "BUTTON" ||
-          nom === "INPUT" || nom === "LABEL" || nom === "SELECT" ||
+      if (nom === "A" && n.getAttribute("href")) {
+        vrai = true;
+        // Un lien qui ne mene nulle part, « # » ou « javascript: », est un
+        // bouton deguise : il n'impose pas de destination, sans quoi les
+        // menus qui ouvrent un outil ailleurs seraient pris pour des pubs.
+        var ou = n.getAttribute("href");
+        if (/^https?:/i.test(n.href) && ou.charAt(0) !== "#" &&
+            !/^javascript:/i.test(ou)) {
+          lien = hote_de(n.href);
+        }
+        break;
+      }
+      if (nom === "BUTTON" || nom === "INPUT" || nom === "LABEL" ||
+          nom === "SELECT" ||
           (n.getAttribute && n.getAttribute("role") === "button")) {
         vrai = true;
         break;
@@ -1820,6 +1834,7 @@ JS_SANS_PUB = r"""
       n = n.parentNode || (n.getRootNode && n.getRootNode().host);
     }
     dernier_geste = vrai ? Date.now() : 0;
+    geste_sur_lien = vrai ? lien : "";
   }, true);
 
   // Un lien qui mene droit a une regie : le clic ne va nulle part. C'est
@@ -1849,7 +1864,15 @@ JS_SANS_PUB = r"""
     try {
       var vers_une_regie = publicitaire(adresse || "");
       var demandee = (Date.now() - dernier_geste) < 1200;
-      if (vers_une_regie || (!demandee && !meme_maison(adresse || ""))) {
+      var ou = hote_de(adresse || "");
+      // Le tour des sites de streaming : leur script ecoute TOUS les clics
+      // et ouvre sa publicite sur le meme geste que le lien qu'on voulait
+      // suivre. Une fenetre ouverte pendant le clic d'un lien doit donc
+      // mener la ou ce lien menait, ou rester a la maison.
+      var detournee = (geste_sur_lien && ou && ou !== geste_sur_lien
+                       && !meme_maison(adresse || ""));
+      if (vers_une_regie || detournee
+          || (!demandee && !meme_maison(adresse || ""))) {
         compter();
         return fausse;
       }
