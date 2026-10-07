@@ -8,6 +8,25 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- **Une publicité se reconnaît maintenant à sa forme, et plus seulement à son
+  nom.** Les régies de streaming changent de domaine tous les jours, mais
+  leurs adresses portent toujours les mêmes marques : afu.php, clickid,
+  extclickid, zoneid, cost, tsid. Ces adresses sont refusées, qu'elles
+  viennent d'une requête, d'une fenêtre demandée par la page ou d'une
+  redirection. Les cadres venus d'ailleurs aux dimensions d'une bannière sont
+  cachés aussi.
+- **Une page qui supplie d'appuyer sur « Autoriser » reçoit un écran
+  d'avertissement**, avec un bouton pour fermer l'onglet. La fausse case « je
+  ne suis pas un robot » est un leurre : ce qu'elle veut, c'est la permission
+  d'envoyer de la publicité sur votre bureau. Plume refuse la permission et le
+  dit.
+- **Les demandes de notification sont refusées.** Une page qui demande à vous
+  notifier n'a presque jamais de bonne raison, et c'est tout le ressort de
+  l'arnaque « cliquez sur autoriser pour prouver que vous n'êtes pas un
+  robot ». Caméra, micro et position continuent de demander : la question s'y
+  pose vraiment.
+- Une page qui part d'elle-même vers une régie connue, dans son propre
+  onglet, est arrêtée. Seules les fenêtres ouvertes à côté l'étaient.
 - Le panneau de la roue ouvre l'historique et les téléchargements, chacun
   avec son icône, au lieu de les laisser à Ctrl+H et Ctrl+J.
 - Les volets des paramètres portent des titres : interface et recherche,

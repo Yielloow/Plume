@@ -8,6 +8,21 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- **Ads are now recognised by their shape, not just their name.** Streaming ad
+  networks change domain every day, but their addresses always carry the same
+  marks: afu.php, clickid, extclickid, zoneid, cost, tsid. Those addresses are
+  refused, whether they come as a request, as a window the page asks for, or
+  as a redirection. Third-party frames in standard banner sizes are hidden too.
+- **A page that begs you to press Allow now gets a full warning screen**, with
+  a button to close the tab. The fake "I'm not a robot" checkbox is a lure:
+  what it really wants is permission to push ads to your desktop. Plume
+  refuses the permission and says so.
+- **Notification requests are refused.** A page asking to send you
+  notifications almost never has a good reason, and it is the whole point of
+  the "click Allow to prove you are not a robot" scam. Camera, microphone and
+  location still ask, since there the question is real.
+- A page that sends itself to a known ad network, in its own tab, is stopped.
+  Only windows opened alongside were blocked before.
 - The gear panel now opens the history and the downloads directly, each with
   its own icon, instead of leaving them to Ctrl+H and Ctrl+J.
 - The settings panes carry titles: interface and search, history, passwords

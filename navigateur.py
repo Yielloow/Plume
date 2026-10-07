@@ -32,6 +32,7 @@ import subprocess
 import sys
 import threading
 import time
+from urllib.parse import urlparse
 
 import clr
 
@@ -95,6 +96,7 @@ from System.Windows.Forms import (                                 # noqa: E402
     UnhandledExceptionMode)
 from Microsoft.Web.WebView2.Core import (                          # noqa: E402
     CoreWebView2BrowsingDataKinds, CoreWebView2Environment,
+    CoreWebView2PermissionKind, CoreWebView2PermissionState,
     CoreWebView2ProcessFailedKind,
     CoreWebView2FaviconImageFormat, CoreWebView2MemoryUsageTargetLevel,
     CoreWebView2WebResourceContext)
@@ -183,6 +185,25 @@ MOTIFS_PUBS = ["*://*.%s/*" % hote for hote in HOTES_PUBS] + [
     "*://*.youtube.com/youtubei/v1/player/ad_break*",
     "*://*.twitch.tv/*/ads*",
 ]
+
+# Ce qui trahit une adresse publicitaire quand son domaine ne dit rien :
+# elle transporte l'identifiant du clic, le prix paye, la zone vendue. Deux
+# marques sont exigees pour les plus communes : une seule ferait des
+# victimes innocentes.
+SIGNATURES_PUBS = (
+    ("/afu.php",),
+    ("extclickid=",),
+    ("clickid=", "cost="),
+    ("clickid=", "tsid="),
+    ("zoneid=", "var="),
+    ("utm_campaign=", "propeller"),
+    ("/go.php?", "zoneid="),
+)
+
+# La meme, pour la page : « \/afu\.php|extclickid=|... ».
+SIGNATURE_JS = ("\\/afu\\.php|extclickid=|clickid=[^#]*cost=|"
+                "clickid=[^#]*tsid=|zoneid=[^#]*var=|"
+                "utm_campaign=[^#]*propeller")
 
 # La meme liste, pour la page. Les points partent doublement echappes : le
 # script les pose dans une chaine JavaScript, qui en mange un niveau avant
@@ -430,6 +451,55 @@ def _echapper_js(texte):
             .replace("<", "\\u003c")
             .replace("&", "&amp;")
             .replace('"', "&quot;"))
+
+
+# L'ecran pose par-dessus une page frauduleuse. Il ne remplace pas la page :
+# on le retire d'un bouton, et l'historique reste intact.
+JS_ECRAN_ARNAQUE = """
+(function () {
+  if (document.getElementById("plume-arnaque")) return;
+  var fond = document.createElement("div");
+  fond.id = "plume-arnaque";
+  fond.style.cssText = %(fond)s;
+  var boite = document.createElement("div");
+  boite.style.cssText = %(boite)s;
+  var marque = document.createElement("div");
+  marque.style.cssText = %(marque)s;
+  marque.innerHTML = %(etincelle)s;
+  var titre = document.createElement("h1");
+  titre.textContent = %(titre)s;
+  titre.style.cssText = %(style_titre)s;
+  var texte = document.createElement("p");
+  texte.textContent = %(texte)s;
+  texte.style.cssText = %(style_texte)s;
+  var detail = document.createElement("p");
+  detail.textContent = %(detail)s;
+  detail.style.cssText = %(style_detail)s;
+  var boutons = document.createElement("div");
+  boutons.style.cssText = "display:flex;gap:12px;margin-top:26px;" +
+                          "justify-content:center;flex-wrap:wrap";
+  var fermer = document.createElement("button");
+  fermer.textContent = %(bouton_fermer)s;
+  fermer.style.cssText = %(style_plein)s;
+  fermer.onclick = function () {
+    try {
+      window.chrome.webview.postMessage(JSON.stringify(
+        {type: "arnaque", action: "fermer"}));
+    } catch (e) {}
+  };
+  var rester = document.createElement("button");
+  rester.textContent = %(bouton_rester)s;
+  rester.style.cssText = %(style_vide)s;
+  rester.onclick = function () { fond.remove(); };
+  boutons.appendChild(fermer);
+  boutons.appendChild(rester);
+  [marque, titre, texte, detail, boutons].forEach(function (e) {
+    boite.appendChild(e);
+  });
+  fond.appendChild(boite);
+  (document.body || document.documentElement).appendChild(fond);
+})();
+"""
 
 
 MODELE_HISTORIQUE = """<!doctype html>
@@ -1699,6 +1769,13 @@ JS_SANS_PUB = r"""
   window.__plume_sans_pub = true;
 
   var REGIES = new RegExp("(^|\\.)(__HOTES__)$", "i");
+  // Et la forme de l'adresse, pour les domaines jetables.
+  var SIGNATURE = new RegExp("__SIGNATURE__", "i");
+
+  function publicitaire(adresse) {
+    var texte = String(adresse || "");
+    return SIGNATURE.test(texte) || REGIES.test(hote_de(texte));
+  }
 
   function compter() {
     try {
@@ -1750,7 +1827,7 @@ JS_SANS_PUB = r"""
   addEventListener("click", function (e) {
     var n = e.target;
     while (n && n !== document) {
-      if (n.tagName === "A" && n.href && REGIES.test(hote_de(n.href))) {
+      if (n.tagName === "A" && n.href && publicitaire(n.href)) {
         e.preventDefault();
         e.stopPropagation();
         compter();
@@ -1770,7 +1847,7 @@ JS_SANS_PUB = r"""
   };
   window.open = function (adresse) {
     try {
-      var vers_une_regie = REGIES.test(hote_de(adresse || ""));
+      var vers_une_regie = publicitaire(adresse || "");
       var demandee = (Date.now() - dernier_geste) < 1200;
       if (vers_une_regie || (!demandee && !meme_maison(adresse || ""))) {
         compter();
@@ -1796,6 +1873,59 @@ JS_SANS_PUB = r"""
     "[id='taboola-below-article-thumbnails']", ".trc_related_container",
     ".OUTBRAIN", ".ob-widget"
   ].join(",") + "{display:none!important}";
+
+  // Les bannieres qui ne disent pas leur nom. Un cadre venu d'un autre
+  // domaine, aux dimensions exactes d'un format publicitaire, n'est
+  // presque jamais autre chose : ces tailles sont normalisees depuis vingt
+  // ans, et aucun site ne les emploie par hasard pour son propre contenu.
+  var FORMATS = [[728, 90], [970, 250], [970, 90], [300, 250], [336, 280],
+                 [300, 600], [160, 600], [320, 100], [320, 50], [468, 60],
+                 [250, 250], [240, 400], [120, 600]];
+
+  function format_de_pub(l, h) {
+    // Six pixels de marge : un cadre porte une bordure par defaut de deux
+    // pixels de chaque cote, et mesurer la boite rend donc quatre de trop.
+    for (var i = 0; i < FORMATS.length; i++) {
+      if (Math.abs(l - FORMATS[i][0]) <= 6 && Math.abs(h - FORMATS[i][1]) <= 6) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function cacher_bannieres() {
+    var cadres = document.querySelectorAll("iframe:not([data-plume])");
+    for (var i = 0; i < cadres.length; i++) {
+      var c = cadres[i];
+      c.setAttribute("data-plume", "vu");
+      try {
+        var sien = hote_de(c.src || "");
+        if (!sien || meme_maison(c.src)) continue;
+        var r = c.getBoundingClientRect();
+        // Les dimensions annoncees comptent autant que les mesurees : un
+        // cadre pas encore charge n'a pas de boite, mais il a ses attributs.
+        var la = parseInt(c.getAttribute("width") || "0", 10);
+        var ha = parseInt(c.getAttribute("height") || "0", 10);
+        if (publicitaire(c.src) || format_de_pub(r.width, r.height)
+            || format_de_pub(la, ha)) {
+          c.style.setProperty("display", "none", "important");
+          compter();
+        }
+      } catch (e) {}
+    }
+  }
+
+  addEventListener("DOMContentLoaded", function () {
+    cacher_bannieres();
+    // Les bannieres arrivent souvent apres la page : on repasse quelques
+    // fois, puis on cesse plutot que de tourner indefiniment.
+    var fois = 0;
+    var minuteur = setInterval(function () {
+      fois += 1;
+      cacher_bannieres();
+      if (fois > 8) clearInterval(minuteur);
+    }, 1500);
+  });
 
   function poser_style() {
     try {
@@ -2140,6 +2270,47 @@ JS = r"""
     }
   }
 
+  // --- La page qui supplie d'appuyer sur « autoriser ».
+  // Le commerce est simple : on accepte les notifications en croyant prouver
+  // qu'on n'est pas un robot, et la publicite arrive ensuite sur le bureau,
+  // navigateur ferme. Plume refuse deja la notification ; reste a le dire.
+  var APPEL = /(appuyez|cliquez|appuyer|cliquer|tapez|touchez)[^.]{0,30}(autoriser|allow)|(click|press|tap)[^.]{0,20}allow|разреш/i;
+  // Deux niveaux de pretexte. Le fort suffit quand la page a demande a
+  // notifier ; le faible ne vaut qu'accompagne de la supplique. Sans cette
+  // distinction, un site honnete qui demande a notifier et dit « confirmez
+  // votre inscription » se faisait accuser.
+  var PRETEXTE = /robot|captcha|verif|vérif|confirm|humain|human/i;
+  var PRETEXTE_FORT = /robot|captcha|humain|human/i;
+  var arnaque_dite = false;
+
+  // Une page qui demande a notifier se signale d'elle-meme : on retient
+  // qu'elle l'a fait, c'est la moitie de la preuve.
+  var a_demande = false;
+  try {
+    var demander = Notification.requestPermission;
+    Notification.requestPermission = function () {
+      a_demande = true;
+      regarder_arnaque();
+      return demander.apply(Notification, arguments);
+    };
+  } catch (e) {}
+
+  function regarder_arnaque() {
+    if (arnaque_dite) return;
+    var corps = document.body ? (document.body.innerText || "") : "";
+    var texte = (document.title || "") + " " + corps.slice(0, 4000);
+    var supplie = APPEL.test(texte) && PRETEXTE.test(texte);
+    var demande_louche = a_demande && PRETEXTE_FORT.test(texte);
+    if (!supplie && !demande_louche) return;
+    arnaque_dite = true;
+    envoyer("arnaque", { url: location.href });
+  }
+
+  addEventListener("DOMContentLoaded", function () {
+    setTimeout(regarder_arnaque, 1200);
+  });
+  setTimeout(regarder_arnaque, 3500);
+
   // Le mode theatre de YouTube : on retient le choix de qui regarde, pour
   // le reposer a la video suivante. C'est la page qui le dit : l'attribut
   // est sur son cadre, et il change aussi au clavier.
@@ -2227,6 +2398,26 @@ JS_SORTIE_BANDEAU = (
 # La bulle du lecteur : duree du fondu d'apparition, et son pas.
 FONDU_BULLE = 180
 PAS_FONDU = 15
+
+
+def _vers_une_regie(adresse):
+    """Vrai si cette adresse mene a une publicite, par son nom ou sa forme.
+
+    Le nom ne suffit plus : les regies de streaming changent de domaine tous
+    les jours. Leur adresse, elle, porte toujours l'identifiant du clic et le
+    prix paye.
+    """
+    texte = str(adresse or "")
+    basse = texte.lower()
+    try:
+        hote = (urlparse(texte).hostname or "").lower()
+    except Exception:
+        hote = ""
+    if hote and any(hote == regie or hote.endswith("." + regie)
+                    for regie in HOTES_PUBS):
+        return True
+    return any(all(marque in basse for marque in signature)
+               for signature in SIGNATURES_PUBS)
 
 
 def _ouverture_en_arriere_plan():
@@ -2352,6 +2543,7 @@ class Onglet(object):
                 self.poser_sans_pub(noyau)
             # Le script porte la liste des regies : elle est posee une fois,
             # a l'injection, plutot que repetee dans le code de la page.
+            noyau.PermissionRequested += self.au_droit_demande
             noyau.ProcessFailed += self.au_moteur_perdu
             noyau.WebMessageReceived += self.au_message
             noyau.NewWindowRequested += self.au_nouvelle_fenetre
@@ -2593,7 +2785,8 @@ class Onglet(object):
             if noyau is None or self._id_sans_pub is not None:
                 return
             tache = noyau.AddScriptToExecuteOnDocumentCreatedAsync(
-                JS_SANS_PUB.replace("__HOTES__", MOTIF_HOTES_JS))
+                JS_SANS_PUB.replace("__HOTES__", MOTIF_HOTES_JS)
+                            .replace("__SIGNATURE__", SIGNATURE_JS))
 
             def retenir(terminee):
                 try:
@@ -2614,6 +2807,23 @@ class Onglet(object):
                 noyau.RemoveScriptToExecuteOnDocumentCreated(ident)
         except Exception as e:
             journal("module sans pub : %r" % (e,))
+
+    def au_droit_demande(self, envoyeur, args):
+        """Refuse les notifications, laisse le reste suivre son cours.
+
+        Une page qui demande a vous notifier n'a presque jamais de bonne
+        raison, et c'est le ressort de l'arnaque qui dit « cliquez sur
+        autoriser pour prouver que vous n'etes pas un robot ». Camera, micro
+        et position gardent leur fenetre de demande : la question s'y pose
+        vraiment.
+        """
+        try:
+            if args.PermissionKind == CoreWebView2PermissionKind.Notifications:
+                args.State = CoreWebView2PermissionState.Deny
+                args.Handled = True
+                journal("notifications refusees : %s" % str(self.url)[:60])
+        except Exception as e:
+            journal("autorisation : %r" % (e,))
 
     def au_moteur_perdu(self, envoyeur, args):
         """Un processus du moteur s'est arrete. Selon lequel, tout change.
@@ -2677,6 +2887,17 @@ class Onglet(object):
 
     def au_depart_navigation(self, envoyeur, args):
         self.avancer_a(0.08)
+        # Une page qui s'en va d'elle-meme vers une regie : la redirection
+        # publicitaire, celle qui remplace la page qu'on regardait. Le
+        # blocage des fenetres ne couvrait que celles ouvertes a cote.
+        try:
+            if core.module_actif("ext_sans_pub") and _vers_une_regie(args.Uri):
+                args.Cancel = True
+                self.nav.pubs_bloquees += 1
+                journal("redirection refusee : %s" % str(args.Uri)[:80])
+                return
+        except Exception as e:
+            journal("redirection : %r" % (e,))
         # Les pages de Plume sont des fichiers, ecrits au moment ou on les
         # ouvre. Y revenir autrement, par F5, par la barre d'adresse ou par
         # une session restauree, affichait l'etat d'avant : un mot de passe
@@ -2804,6 +3025,15 @@ class Onglet(object):
             args.Handled = True          # rien ne sort de l'application
             if not args.IsUserInitiated:
                 journal("popup de script refusee : %s" % str(args.Uri)[:90])
+                return
+            if (core.module_actif("ext_sans_pub")
+                    and _vers_une_regie(str(args.Uri))):
+                # La page demande une fenetre vers une publicite : on ne
+                # l'ouvre pas. C'est le cas du clic sur un lecteur de
+                # streaming, qui envoie ailleurs avant de jouer.
+                self.nav.pubs_bloquees += 1
+                journal("fenetre publicitaire refusee : %s"
+                        % str(args.Uri)[:80])
                 return
             derriere = _ouverture_en_arriere_plan()
             journal("nouvel onglet demande par la page : %s%s"
@@ -5395,6 +5625,63 @@ class Navigateur(Form):
             self.nouvel_onglet(demande)
         journal("session : %d onglet(s) repris" % len(onglets))
 
+    def montrer_ecran_arnaque(self, onglet):
+        """Pose l'ecran d'avertissement par-dessus une page frauduleuse.
+
+        Pose, et non substitue : la page reste dessous, l'historique n'est pas
+        touche, et qui sait ce qu'il fait peut revenir d'un bouton.
+        """
+        style = ("position:fixed;inset:0;z-index:2147483647;"
+                 "background:%s;display:flex;align-items:center;"
+                 "justify-content:center;padding:24px;"
+                 "font:15px/1.6 'Segoe UI',system-ui,sans-serif"
+                 % ui.ecrire_couleur(ui.FOND_PAGE))
+        boite = ("max-width:620px;text-align:center;background:%s;"
+                 "border:1px solid %s;border-radius:16px;padding:40px 36px;"
+                 "box-shadow:0 30px 90px -40px rgba(0,0,0,.9)"
+                 % (ui.ecrire_couleur(ui.FOND_ONGLETS), ui.accent_courant()))
+        etincelle = (
+            '<svg viewBox="-1 -1 2 2" width="34" height="34">'
+            '<path fill="%s" d="M0,-1 Q0.16,-0.16 1,0 Q0.16,0.16 0,1'
+            ' Q-0.16,0.16 -1,0 Q-0.16,-0.16 0,-1 Z"/></svg>'
+            % ui.ecrire_couleur(ui.ACCENT_PALE))
+        valeurs = {
+            "fond": json.dumps(style),
+            "boite": json.dumps(boite),
+            "marque": json.dumps("margin-bottom:14px"),
+            "etincelle": json.dumps(etincelle),
+            "titre": json.dumps(core.t("arnaque_titre")),
+            "style_titre": json.dumps(
+                "margin:0 0 14px;font-size:24px;font-weight:600;color:%s"
+                % ui.ecrire_couleur(ui.TEXTE)),
+            "texte": json.dumps(core.t("arnaque_texte")),
+            "style_texte": json.dumps(
+                "margin:0;color:%s" % ui.ecrire_couleur(ui.TEXTE2)),
+            "detail": json.dumps(core.t("arnaque_detail")),
+            "style_detail": json.dumps(
+                "margin:14px 0 0;font-size:13px;color:%s"
+                % ui.ecrire_couleur(ui.TEXTE3)),
+            "bouton_fermer": json.dumps(core.t("arnaque_fermer")),
+            "style_plein": json.dumps(
+                "background:%s;color:#fff;border:0;border-radius:10px;"
+                "padding:11px 20px;cursor:pointer;"
+                "font:600 14px 'Segoe UI',sans-serif"
+                % ui.accent_courant()),
+            "bouton_rester": json.dumps(core.t("arnaque_rester")),
+            "style_vide": json.dumps(
+                "background:transparent;color:%s;border:1px solid %s;"
+                "border-radius:10px;padding:11px 20px;cursor:pointer;"
+                "font:14px 'Segoe UI',sans-serif"
+                % (ui.ecrire_couleur(ui.TEXTE2),
+                   ui.ecrire_couleur(ui.CHAMP_BORD))),
+        }
+        try:
+            noyau = onglet.vue.CoreWebView2
+            if noyau is not None:
+                noyau.ExecuteScriptAsync(JS_ECRAN_ARNAQUE % valeurs)
+        except Exception as e:
+            journal("ecran d'arnaque : %r" % (e,))
+
     def poser_theatre(self, onglet):
         """Remet le mode theatre voulu sur une page de lecture YouTube."""
         adresse = onglet.url or ""
@@ -7270,6 +7557,13 @@ class Navigateur(Form):
             # Le mode theatre suit qui regarde, pas la video : on le retient
             # pour le reposer sur la suivante.
             core.definir_reglage("theatre_youtube", bool(message.get("actif")))
+            return
+        if genre == "arnaque":
+            if message.get("action") == "fermer":
+                self.fermer(onglet)
+                return
+            journal("page frauduleuse : %s" % str(message.get("url"))[:80])
+            self.montrer_ecran_arnaque(onglet)
             return
         if genre == "page_vide":
             # La page s'est chargee sans rien montrer. Un rechargement la
