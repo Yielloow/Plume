@@ -1589,6 +1589,36 @@ def plantage(ou, erreur=None):
         pass
 
 
+def noter_incident(texte):
+    """Ecrit une ligne dans plantages.txt, sans qu'il faille rien activer.
+
+    Le journal detaille demande une variable d'environnement : personne ne
+    l'a. Ce fichier-ci existe toujours, et c'est lui qu'on lit apres coup.
+    """
+    journal(texte)
+    try:
+        FICHIER_PLANTAGES.parent.mkdir(parents=True, exist_ok=True)
+        with open(FICHIER_PLANTAGES, "a", encoding="utf-8") as f:
+            f.write("%s  %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), texte))
+    except Exception:
+        pass
+
+
+def processus_vivant(pid):
+    """Vrai tant que ce processus n'a pas rendu l'ame."""
+    try:
+        poignee = kernel32.OpenProcess(0x00100000, False, int(pid))
+    except Exception:
+        return False
+    if not poignee:
+        return False
+    try:
+        kernel32.CloseHandle(ctypes.c_void_p(poignee))
+    except Exception:
+        pass
+    return True
+
+
 def journal(message):
     if not _JOURNAL:
         return
@@ -2859,7 +2889,8 @@ class Onglet(object):
             genre = args.ProcessFailedKind
         except Exception:
             genre = None
-        journal("moteur perdu : %s sur %s" % (genre, str(self.url)[:60]))
+        noter_incident("moteur perdu : %s sur %s"
+                       % (genre, str(self.url)[:60]))
         try:
             if genre in (CoreWebView2ProcessFailedKind.RenderProcessExited,
                          CoreWebView2ProcessFailedKind.FrameRenderProcessExited,
@@ -7872,16 +7903,28 @@ class Navigateur(Form):
         if _REPART[0]:
             return                  # une seule fois, quoi qu'il arrive
         _REPART[0] = True
-        journal("moteur perdu : Plume repart")
+        noter_incident("moteur perdu : Plume enregistre et repart")
         try:
             self.enregistrer_session(force=True)
         except Exception as e:
-            journal("session avant redemarrage : %r" % (e,))
+            noter_incident("session avant redemarrage : %r" % (e,))
+        # La nouvelle Plume doit attendre que celle-ci ait disparu : sans
+        # cela elle trouve le canal local occupe, croit qu'une Plume tourne
+        # deja, lui confie son adresse et s'en va. Les deux se fermaient, et
+        # il ne restait rien.
         try:
-            subprocess.Popen([core.EXECUTABLE],
+            subprocess.Popen([core.EXECUTABLE, "--attendre=%d" % os.getpid()],
                              creationflags=core.CREATE_NO_WINDOW)
         except Exception as e:
-            journal("redemarrage : %r" % (e,))
+            # Rien n'a ete lance : fermer maintenant laisserait l'ecran vide
+            # sans explication. On reste, et on le dit.
+            noter_incident("redemarrage impossible : %r" % (e,))
+            _REPART[0] = False
+            try:
+                self.signaler(core.t("moteur_mort"))
+            except Exception:
+                pass
+            return
         try:
             self.Invoke(Action(lambda: Application.Exit()))
         except Exception:
@@ -9170,6 +9213,20 @@ def main():
     ui.appliquer_accent(core.couleur_theme())
     core.effacer_ancien_export_cookies()
     arguments = sys.argv[1:]
+    # Relancee apres la mort du moteur : on laisse l'ancienne Plume finir de
+    # se fermer, sinon on lui confierait notre adresse et on s'en irait.
+    attente = next((a for a in arguments
+                    if a.startswith("--attendre=")), None)
+    if attente:
+        try:
+            pid = int(attente.split("=", 1)[1])
+        except ValueError:
+            pid = 0
+        debut = time.time()
+        while pid and processus_vivant(pid) and time.time() - debut < 15:
+            time.sleep(0.25)
+        noter_incident("relance apres le moteur : ancienne Plume %s"
+                       % ("partie" if not processus_vivant(pid) else "tenace"))
     veut_fenetre = "--nouvelle-fenetre" in arguments
     veut_privee = "--fenetre-privee" in arguments
     adresses = [a for a in arguments if not a.startswith("--")]

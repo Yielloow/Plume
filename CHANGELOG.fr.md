@@ -8,6 +8,14 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- **Plume ne se ferme plus toute seule après un incident du moteur.** Le
+  redémarrage ajouté dans cette version lançait la nouvelle Plume pendant que
+  l'ancienne vivait encore : la nouvelle trouvait le canal local occupé, en
+  concluait qu'une Plume tournait déjà, lui confiait son adresse et s'en
+  allait, puis l'ancienne se fermait. La nouvelle attend désormais que
+  l'ancienne ait disparu, et l'ancienne ne se ferme que si la nouvelle a bien
+  démarré. Les incidents du moteur sont écrits dans profil/plantages.txt,
+  lisible sans rien activer.
 - **L'astuce des fenêtres de streaming est bloquée.** Ces sites chargent leur
   propre script, qui écoute tous les clics de la page et ouvre une publicité
   sur le même geste que le lien qu'on voulait suivre. Une fenêtre ouverte

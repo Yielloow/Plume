@@ -8,6 +8,13 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- **Plume no longer closes itself after an engine crash.** The restart added
+  in this version launched the new Plume while the old one was still alive:
+  the new one found the local channel busy, assumed another Plume was
+  running, handed over its address and left, and the old one closed right
+  after. The new Plume now waits for the old to be gone, and the old only
+  closes once the new one has really started. Engine incidents are written to
+  profil/plantages.txt, readable without turning anything on.
 - **The streaming pop-up trick is blocked.** Those sites load their own script
   that listens to every click on the page and opens an ad on the same gesture
   as the link you actually wanted. A window opened while you were clicking a
