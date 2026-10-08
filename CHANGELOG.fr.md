@@ -8,6 +8,21 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.24 (2026-09-30)
 
+- **Les pages qui ne posent aucun fond sont de nouveau lisibles.** Plume peint
+  un fond sombre sous les pages pour qu'un onglet neuf ne lance pas un éclair
+  blanc, mais c'est aussi le fond que reçoit une page qui n'en pose aucun :
+  LinkedIn laisse html et body transparents avec un texte presque noir, et
+  sortait noir sur noir. Le sombre ne vaut plus que pour l'attente. Dès que la
+  page s'annonce, le fond passe au blanc, sauf si elle se déclare sombre : elle
+  garde alors le fond qu'un navigateur lui donnerait.
+- **Une page qui ne répond plus peut être ranimée.** Quand un rendu se fige, ni
+  F5 ni un clic ne l'atteignent, puisque les deux lui sont adressés : c'est
+  l'onglet resté tout noir, dont aucun bouton ne réagit. Plume remplace
+  désormais la vue elle-même, ce qui revient à changer de processus.
+  Ctrl+Maj+R le fait à la demande, et Plume le fait seule quand une page se
+  signale vide une seconde fois, ou quand le moteur annonce un rendu qui ne
+  répond plus. Trois tentatives au plus, pour qu'une page vide de naissance ne
+  tourne pas en boucle.
 - **Plume ne se ferme plus toute seule après un incident du moteur.** Le
   redémarrage ajouté dans cette version lançait la nouvelle Plume pendant que
   l'ancienne vivait encore : la nouvelle trouvait le canal local occupé, en

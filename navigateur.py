@@ -80,9 +80,10 @@ clr.AddReference(os.path.join(LIB, "Microsoft.Web.WebView2.WinForms.dll"))
 import System                                                      # noqa: E402
 from System import (AppDomain, Action, DateTime, DateTimeKind,   # noqa: E402
                     IntPtr, Uri)
-from System.Drawing import (Bitmap, Font, FontStyle, Graphics,  # noqa: E402
-                            Icon, Image, Point, PointF, Rectangle,
-                            RectangleF, Region, Size, SolidBrush)
+from System.Drawing import (Bitmap, Color, Font, FontStyle,    # noqa: E402
+                            Graphics, Icon, Image, Point, PointF,
+                            Rectangle, RectangleF, Region, Size,
+                            SolidBrush)
 from System.Drawing.Drawing2D import FillMode                      # noqa: E402
 from System.Drawing.Imaging import ImageFormat                     # noqa: E402
 from System.IO import MemoryStream                                 # noqa: E402
@@ -2153,6 +2154,23 @@ JS = r"""
     addEventListener("auxclick", derriere, true);
     addEventListener("click", derriere, true);
   }
+
+  // Le fond que la page suppose. Plume peint un fond sombre sous les pages,
+  // sans quoi un onglet neuf lance un eclair blanc. Mais c'est aussi le fond
+  // que voit une page qui n'en pose aucun : LinkedIn laisse html et body
+  // transparents avec un texte noir, et devenait illisible. La page dit donc
+  // a Plume si elle se declare sombre, et le fond suit. Mesurer le fond
+  // d'ici ne servirait a rien : une fois propage au canevas, le fond de body
+  // est rendu comme transparent, mesure faite.
+  var fond_sombre = function () {
+    try {
+      var cs = getComputedStyle(document.documentElement).colorScheme || "";
+      if (!/dark/.test(cs)) return false;
+      if (!/light/.test(cs)) return true;   // « dark » seul : c'est dit
+      // « light dark » : la page suit le systeme, et le systeme tranche.
+      return matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch (e) { return false; }
+  };
   if (window.__plume) return;
   // Choix de l'utilisateur, garde par le site lui-meme : une seule source de
   // verite, et la preference suit naturellement le domaine. Sur Twitch, le
@@ -2170,7 +2188,7 @@ JS = r"""
         try {
           window.chrome.webview.postMessage(JSON.stringify({
             type: "url", url: vu, titre: document.title || "",
-            lecteur: "site" }));
+            lecteur: "site", sombre: fond_sombre() }));
         } catch (e) {}
       };
       setInterval(dire, 500);
@@ -2410,7 +2428,7 @@ JS = r"""
     museler();
     masquerPubs();
     envoyer("url", { url: location.href, titre: document.title || "",
-                     lecteur: "plume" });
+                     lecteur: "plume", sombre: fond_sombre() });
   });
 })();
 """
@@ -2534,23 +2552,45 @@ class Onglet(object):
         # Identifiant du script qui retire les pubs, rendu par WebView2 :
         # sans lui, impossible de le retirer quand le module est coupe.
         self._id_sans_pub = None
-        # Adresse deja rechargee pour cause de page vide : on ne recommence
-        # pas, sous peine de boucler sur une page qui est vide de naissance.
+        # Adresse deja signalee vide, et ce qu'on a tente pour elle : trois
+        # fois au plus, sous peine de boucler sur une page qui est vide de
+        # naissance.
         self._vide_rechargee = ""
+        self._vide_tentatives = 0
+        # Vrai pendant qu'on remplace la vue de cet onglet.
+        self._refection = False
         self.rect = Rectangle(0, 0, 0, 0)
 
+        self.construire_vue(url)
+
+    # ------------------------------------------------------------------
+    def construire_vue(self, url):
+        """Fabrique la vue WebView2 de cet onglet et la pose dans la fenetre.
+
+        A part du constructeur parce qu'on la refait parfois a neuf : un rendu
+        fige ne se repare pas, il se remplace.
+        """
+        navigateur = self.nav
         self.vue = WebView2()
-        # WebView2 peint en BLANC tant que la page n'a rien rendu : sur une
-        # interface sombre, chaque onglet neuf lancait un eclair blanc en plein
-        # ecran. La couleur de fond par defaut supprime l'eclair sans rien
-        # changer aux pages, qui posent la leur par dessus.
+        # Deux fonds, et ils ne font pas le meme travail.
         #
-        # Deux fonds, pas un. `DefaultBackgroundColor` est celui du navigateur,
-        # sous la page. `BackColor` est celui du controle WinForms qui le
-        # porte, et c'est Windows qui le peint quand la vue bouge ou change de
-        # taille, avant que le navigateur n'ait compose quoi que ce soit. Il
-        # valait 240,240,240, mesure faite : d'ou les traits clairs au
-        # glissement d'un onglet a l'autre, sur le bord de la vue qui avance.
+        # `BackColor` est celui du controle WinForms qui porte la vue. C'est
+        # Windows qui le peint, quand la vue bouge ou change de taille, avant
+        # que le navigateur n'ait rien compose. Il valait 240,240,240, mesure
+        # faite : d'ou l'eclair blanc a l'ouverture d'un onglet et les traits
+        # clairs au glissement de l'un a l'autre. Il reste sombre, il
+        # n'appartient qu'a Plume.
+        #
+        # `DefaultBackgroundColor` est celui du navigateur, SOUS la page, et
+        # il est sombre pour la meme raison : sans lui, WebView2 peint en blanc
+        # tant que la page n'a rien rendu, et chaque onglet neuf lancait un
+        # eclair blanc en plein ecran.
+        #
+        # Mais c'est aussi le fond que voit une page qui n'en pose aucun, et
+        # LinkedIn est dans ce cas : html et body transparents, texte noir a
+        # 90 %. Texte noir sur fond noir. Le sombre ne vaut donc que pour
+        # l'attente : des que la page s'annonce, elle dit si elle se declare
+        # sombre, et le fond passe au blanc sinon. Voir poser_fond_canevas.
         self.vue.BackColor = ui.FOND_PAGE
         try:
             self.vue.DefaultBackgroundColor = ui.FOND_PAGE
@@ -2583,6 +2623,91 @@ class Onglet(object):
         self.vue.CoreWebView2InitializationCompleted += self.au_pret
         self.vue.EnsureCoreWebView2Async(None)
         self.vue.Source = Uri(url)
+
+    def poser_fond_canevas(self, sombre):
+        """Le fond du navigateur, sous la page : sombre, ou blanc.
+
+        Sombre tant que rien n'est affiche, sinon chaque onglet neuf lance un
+        eclair blanc. Blanc des que la page s'annonce, parce qu'une page qui
+        ne pose aucun fond compte sur celui-la et que le blanc est celui des
+        navigateurs. Sauf si elle se declare sombre : c'est alors le sombre
+        qu'elle attend, et qu'un navigateur ordinaire lui donnerait.
+        """
+        couleur = ui.FOND_PAGE if sombre else Color.White
+        try:
+            if self.vue.DefaultBackgroundColor.ToArgb() != couleur.ToArgb():
+                self.vue.DefaultBackgroundColor = couleur
+        except Exception as e:
+            journal("fond du canevas : %r" % (e,))
+
+    def refaire_la_vue(self):
+        """Remplace la vue de cet onglet par une neuve, a la meme adresse.
+
+        Dernier recours quand une page ne repond plus du tout : son processus
+        de rendu est fige, et ni le rechargement ni la navigation ne
+        l'atteignent, puisque les deux lui sont adresses. C'est pourquoi F5 et
+        les boutons restaient sans effet. Changer de vue, c'est changer de
+        processus.
+
+        L'appel vient presque toujours d'un evenement de la vue elle-meme : un
+        message de la page, ou le moteur qui annonce son rendu fige. La jeter
+        depuis son propre rappel ferait tomber Plume, d'ou le passage par la
+        file de la fenetre.
+        """
+        if self._refection:
+            return                  # une seule a la fois, et elle est en cours
+        self._refection = True
+        try:
+            self.nav.BeginInvoke(Action(self._refaire_la_vue))
+        except Exception as e:
+            journal("vue refaite, report : %r" % (e,))
+            self._refection = False
+
+    def _refaire_la_vue(self):
+        if self not in self.nav.onglets:
+            # Ferme entre-temps : rien a refaire, et surtout pas une vue
+            # neuve dans une fenetre qui ne l'attend plus.
+            self._refection = False
+            return
+        adresse = self.url or ACCUEIL
+        ancienne = self.vue
+        noter_incident("vue refaite : %s" % str(adresse)[:70])
+        try:
+            self.incrustation.cacher()
+        except Exception as e:
+            journal("vue refaite, lecteur : %r" % (e,))
+        try:
+            self.nav.contenu.Controls.Remove(ancienne)
+        except Exception as e:
+            journal("vue refaite, retrait : %r" % (e,))
+        # La vue neuve n'herite de rien : ni du script a retirer, ni de la
+        # veille, ni de la zone du lecteur mesuree dans l'ancienne.
+        self._id_sans_pub = None
+        self.endormi = False
+        self._memoire_rendue = False
+        self._debut_veille = 0.0
+        self.derniere_activite = time.time()
+        self.zone_page = None
+        self.taille_mesure = None
+        self.progression = 0.0
+        self.construire_vue(adresse)
+        actif = (self is self.nav.actif)
+        self.vue.Visible = bool(actif)
+        if actif:
+            try:
+                self.vue.BringToFront()
+                self.vue.Focus()
+            except Exception as e:
+                journal("vue refaite, focus : %r" % (e,))
+        try:
+            ancienne.Dispose()
+        except Exception as e:
+            journal("vue refaite, rejet : %r" % (e,))
+        try:
+            self.nav.rafraichir_onglets()
+        except Exception:
+            pass
+        self._refection = False
 
     # ------------------------------------------------------------------
     def au_pret(self, envoyeur, args):
@@ -2892,9 +3017,13 @@ class Onglet(object):
         noter_incident("moteur perdu : %s sur %s"
                        % (genre, str(self.url)[:60]))
         try:
+            if genre == CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+                # Fige, pas mort : lui demander de recharger ne sert a rien,
+                # puisque c'est lui qui devrait repondre. On le remplace.
+                self.refaire_la_vue()
+                return
             if genre in (CoreWebView2ProcessFailedKind.RenderProcessExited,
-                         CoreWebView2ProcessFailedKind.FrameRenderProcessExited,
-                         CoreWebView2ProcessFailedKind.RenderProcessUnresponsive):
+                         CoreWebView2ProcessFailedKind.FrameRenderProcessExited):
                 self.nav.recharger_onglet(self)
                 return
             if genre == CoreWebView2ProcessFailedKind.BrowserProcessExited:
@@ -2941,6 +3070,10 @@ class Onglet(object):
 
     def au_depart_navigation(self, envoyeur, args):
         self.avancer_a(0.08)
+        # Entre deux pages, rien n'est encore peint : le fond redevient sombre
+        # pour que le passage ne soit pas un eclair blanc. La page suivante
+        # dira, en arrivant, le fond qu'elle suppose.
+        self.poser_fond_canevas(True)
         # Une page qui s'en va d'elle-meme vers une regie : la redirection
         # publicitaire, celle qui remplace la page qu'on regardait. Le
         # blocage des fenetres ne couvrait que celles ouvertes a cote.
@@ -7483,6 +7616,13 @@ class Navigateur(Form):
         # revient donc entierement a la page, sans etre absorbee.
         if args.Control and args.Alt:
             return
+        if args.Control and args.Shift and args.KeyCode == Keys.R:
+            # Rechargement en profondeur : la vue elle-meme est refaite. De
+            # quoi ranimer une page que F5 n'atteint plus.
+            args.SuppressKeyPress = True
+            if self.actif:
+                self.actif.refaire_la_vue()
+            return
         if args.Control and args.KeyCode == Keys.H:
             args.SuppressKeyPress = True
             self.ouvrir_historique()
@@ -7620,14 +7760,28 @@ class Navigateur(Form):
             self.montrer_ecran_arnaque(onglet)
             return
         if genre == "page_vide":
-            # La page s'est chargee sans rien montrer. Un rechargement la
-            # ranime ; une seule fois par adresse, pour qu'une page
-            # reellement vide ne tourne pas en boucle.
+            # La page s'est chargee sans rien montrer. D'abord un
+            # rechargement ; s'il n'y suffit pas, c'est que le rendu ne
+            # repond plus, et c'est a lui que le rechargement s'adressait :
+            # on refait alors la vue, ce qui change de processus. Trois
+            # tentatives au plus, pour qu'une page vide de naissance ne
+            # tourne pas en boucle.
             adresse = str(message.get("url") or "")
-            if adresse and onglet._vide_rechargee != adresse:
+            if not adresse:
+                return
+            if onglet._vide_rechargee != adresse:
                 onglet._vide_rechargee = adresse
+                onglet._vide_tentatives = 0
+            onglet._vide_tentatives += 1
+            if onglet._vide_tentatives > 3:
+                journal("page vide, on renonce : %s" % adresse[:70])
+                return
+            if onglet._vide_tentatives == 1:
                 journal("page vide, rechargement : %s" % adresse[:70])
                 self.recharger_onglet(onglet)
+            else:
+                journal("page vide, vue refaite : %s" % adresse[:70])
+                onglet.refaire_la_vue()
             return
         if genre == "onglet_derriere":
             # Clic de la molette, ou Ctrl+clic : la page a retenu le geste et
@@ -7651,6 +7805,9 @@ class Navigateur(Form):
             onglet.url = message.get("url") or onglet.url
             # Le script dit lui-meme quel lecteur il laisse faire.
             onglet.lecteur_site = (message.get("lecteur") == "site")
+            # Et le fond qu'elle suppose : la page est la, le sombre d'attente
+            # cede la place au blanc, sauf si elle se declare sombre.
+            onglet.poser_fond_canevas(bool(message.get("sombre")))
             self.noter_historique(onglet.url, message.get("titre") or "")
             self.appliquer_zoom(onglet)
             self.enregistrer_session()

@@ -8,6 +8,20 @@ each change is in the commit messages.
 
 ## 1.0.24 (2026-09-30)
 
+- **Pages that set no background of their own are readable again.** Plume
+  paints a dark background under pages so that a new tab does not flash white,
+  but that is also the background a page without one receives: LinkedIn leaves
+  html and body transparent with near-black text, and came out black on black.
+  The dark now covers only the wait. As soon as a page announces itself the
+  background turns white, unless the page declares itself dark, in which case
+  it keeps the dark a browser would give it.
+- **A page that stops answering can be brought back.** When a renderer
+  freezes, neither F5 nor a click reaches it, since both are addressed to it:
+  that is the tab left all black with nothing clickable. Plume now replaces
+  the view itself, which means a new process. Ctrl+Shift+R does it on demand,
+  and Plume does it on its own when a page reports itself empty a second time,
+  or when the engine says a renderer has stopped answering. Three attempts at
+  most, so a page that is empty by nature does not loop.
 - **Plume no longer closes itself after an engine crash.** The restart added
   in this version launched the new Plume while the old one was still alive:
   the new one found the local channel busy, assumed another Plume was
