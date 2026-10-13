@@ -38,9 +38,11 @@ still well under what a full browser costs. Both captures are on the
 
 - **Tabs, bookmarks bar, work groups.** Right-click a tab to file it in a
   group; one click on the home page reopens the whole group.
-- **Sleeping tabs.** Tabs you are not looking at are frozen and give their
-  memory back. Coming back finds them intact, and a tab playing audio is
-  never put to sleep.
+- **Advertising windows blocked.** The ones streaming sites open while you
+  click a link, pop-unders, banners in the standard sizes, and pages begging
+  you to allow notifications, which get a warning screen. A banner says so and
+  lets you open it anyway, for the sites that demand it before showing
+  anything.
 - **YouTube without ads.** Ads are removed from the page before the player
   even sees them, and known ad requests are refused. YouTube keeps its own
   player, fullscreen included.

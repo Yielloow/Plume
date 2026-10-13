@@ -6,8 +6,79 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
-## 1.0.24 (2026-09-30)
+## 1.0.25 (2026-10-09)
 
+- **Tab sleeping is gone.** The engine's browser process died three times in
+  six days, always on a video page, and Windows never said a word about it: no
+  error report, no graphics driver reset, no memory exhaustion. Sleeping was
+  the only thing Plume asked of the engine that touches its process-level
+  memory management, `TrySuspendAsync` and `MemoryUsageTargetLevel` set to
+  Low. It is the best-placed suspect, and the only one that can be removed
+  without losing anything essential. Plume now holds more memory: a browser
+  that weighs is better than a browser that closes. The module, the delay and
+  the dot marking a sleeping tab go with it.
+- **Automatic recovery is off by default.** Spotting a freeze is one thing,
+  closing someone's browser is another, and a false alarm costs more than the
+  freeze. Plume notes what it sees in profil/plantages.txt and stops there;
+  "Restart Plume" waits in the gear panel. The `reprise_auto` setting in
+  config.json turns it back on for those who want it.
+- **Plume takes the pulse of the page you are looking at, and gets itself out
+  of a freeze.** Until now a page that stopped answering stayed that way:
+  neither F5 nor an address reached it, and the only cure was quitting Plume
+  and starting it again. It now asks the engine a trivial question every four
+  seconds, and what counts is that an answer comes back. What is measured is
+  how long a question has gone unanswered, never the time since the last word:
+  a tab left aside is never asked anything, and taking it for a frozen one
+  would reload healthy pages. After twenty-five seconds with no answer, Plume
+  asks the other tabs for their pulse and gives them time to reply: if one
+  answers, the engine is fine and that one renderer is stuck, so its view is
+  rebuilt; if none answers, the engine itself is gone, and Plume saves the
+  session and restarts, which is what you had to do by hand.
+- **"Restart Plume" in the gear panel.** It is the only command still
+  answering when every page is frozen, because Plume draws it, not the engine.
+  Your tabs come back.
+- **Windows a page asks for really open now.** Plume opened a tab at the
+  right address and stopped there, while a page calling window.open expects a
+  window object, the one it then writes into. Sites that open "about:blank"
+  and fill it afterwards, including the ads some sites make you watch before a
+  stream, only ever got a blank tab, blank for good. The window is now handed
+  back to the page.
+- **An ad is also recognised by its parameters.** The address reported carried
+  lp_key, clickid, trk, feed and zone on a throwaway domain no list will ever
+  know. Pairs of parameters now give it away, compared by exact name so that a
+  "timezone" is not taken for a sold zone, along with a surer mark still: a
+  domain that starts with the very click id it carries.
+- **A refused advertising window says so, and leaves you the last word.** Some
+  sites demand you watch their ads before showing what you came for, and a
+  silent refusal left you in front of a page going nowhere with no reason
+  given. A banner now says it and offers to open it anyway, and that tab is no
+  longer filtered.
+- **The what's new page no longer reports itself.** It quotes the changelog,
+  which describes the "click allow to prove you are not a robot" scam. The
+  detector found both a plea and a pretext there, and put its warning screen
+  over one of Plume's own pages. A notification scam arrives over the web and
+  never from a local file: the warning now only applies to http and https
+  pages.
+- **A tab left alone no longer comes back mute.** A background tab is
+  suspended after ninety seconds. Coming back to it during that suspension
+  found nothing to wake, because the tab is only marked asleep once the
+  suspension completes: the suspension then landed on a page being looked at.
+  Nothing answered any more, and typing an address changed nothing either, a
+  suspended engine ignoring the navigations sent to it. A suspension now
+  cancels itself if you come back, waking a tab is only recorded once it has
+  really worked, every way of navigating wakes the tab first, and a
+  tab you are looking at that the engine reports as suspended is brought
+  back: when the window returns to the front, when it is resized, and
+  otherwise every fifteen seconds. A tab brought back also picks up the
+  current size again: while suspended it had not followed the changes, which
+  is why the page was painted three quarters of the way into the corner of
+  the window, and why enlarging the window did not fix it.
+- **After an engine crash, Plume no longer vanishes entirely.** The new Plume
+  waits for the old one, but when the old one outlives that wait, the new one
+  used to hand it the address and leave, and the old one closed right after.
+  The incident log showed exactly that case. A Plume relaunched after a crash
+  now opens its own window and hands nothing over: two windows are better
+  than no browser.
 - **Pages that set no background of their own are readable again.** Plume
   paints a dark background under pages so that a new tab does not flash white,
   but that is also the background a page without one receives: LinkedIn leaves
@@ -22,6 +93,9 @@ each change is in the commit messages.
   and Plume does it on its own when a page reports itself empty a second time,
   or when the engine says a renderer has stopped answering. Three attempts at
   most, so a page that is empty by nature does not loop.
+
+## 1.0.24 (2026-09-30)
+
 - **Plume no longer closes itself after an engine crash.** The restart added
   in this version launched the new Plume while the old one was still alive:
   the new one found the local channel busy, assumed another Plume was

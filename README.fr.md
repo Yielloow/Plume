@@ -39,9 +39,11 @@ deux captures sont sur le [site](https://yielloow.github.io/Plume/).
 - **Onglets, barre de favoris, groupes de travail.** Un clic droit sur un
   onglet le range dans un groupe ; un clic sur la page d'accueil rouvre tout
   le groupe.
-- **Onglets en veille.** Ceux que vous ne regardez pas sont gelés et rendent
-  leur mémoire. Y revenir les retrouve intacts, et un onglet qui joue du son
-  n'est jamais endormi.
+- **Les fenêtres de publicité bloquées.** Celles qui s'ouvrent sur les sites
+  de streaming pendant qu'on clique un lien, les pop-unders, les bannières aux
+  formats connus, et les pages qui supplient d'autoriser les notifications,
+  qui reçoivent un écran d'avertissement. Un bandeau le dit et laisse ouvrir
+  quand même, pour les sites qui l'exigent avant de montrer quoi que ce soit.
 - **YouTube sans publicité.** Les publicités sont retirées de la page avant
   même que le lecteur ne les voie, et les requêtes publicitaires connues sont
   refusées. YouTube garde son lecteur, plein écran compris.

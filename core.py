@@ -38,9 +38,13 @@ DEFAULT_CONFIG = {
     "cookies_navigateur": False,
     "youtube_client": "web_safari",
     "mpv_extra": [],
-    # Secondes d'inactivite avant qu'un onglet d'arriere-plan soit gele.
-    # 0 desactive la veille. Voir README, « Les onglets qui dorment ».
-    "veille_onglets": 90,
+    # Agir seule quand une page ou le moteur ne repond plus : refaire la vue,
+    # ou relancer Plume. A faux tant que la mesure du gel n'a pas fait ses
+    # preuves : une fausse alerte recharge une video en cours, ou ferme le
+    # navigateur de quelqu'un qui travaillait, ce qui est pire que le mal. Le
+    # gel reste detecte et ecrit dans profil/plantages.txt, et « Relancer
+    # Plume » reste dans le panneau de la roue.
+    "reprise_auto": False,
     # Ouverture dessinee au lancement. Mettre a false pour demarrer sec.
     "intro": True,
     # Glissement de la page en changeant d'onglet. C'est le geste le plus
@@ -63,7 +67,6 @@ DEFAULT_CONFIG = {
     # coupe depuis la page des parametres, sans rien desinstaller.
     "ext_sans_pub": True,        # les pubs de YouTube retirees dans la page
     "ext_lecteur_twitch": True,  # les lives Twitch lus par mpv, sans coupure
-    "ext_veille": True,          # les onglets d'arriere-plan qui s'endorment
     # Enregistrement des mots de passe et remplissage des formulaires : deux
     # reglages du moteur. Allumes, comme partout ailleurs : le moteur demande
     # avant d'enregistrer quoi que ce soit, et la page des parametres montre
@@ -1005,7 +1008,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.24"
+VERSION = "1.0.25"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une

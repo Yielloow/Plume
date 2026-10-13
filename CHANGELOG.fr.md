@@ -6,8 +6,84 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
-## 1.0.24 (2026-09-30)
+## 1.0.25 (2026-10-09)
 
+- **La mise en veille des onglets est retirée.** Le processus navigateur du
+  moteur est mort trois fois en six jours, toujours sur une page vidéo, et
+  jamais Windows n'en a dit un mot : ni rapport d'erreur, ni pilote graphique,
+  ni manque de mémoire. Or la veille était la seule chose que Plume demandait
+  au moteur qui touche à la gestion de sa mémoire au niveau du processus,
+  `TrySuspendAsync` et `MemoryUsageTargetLevel` posé à Low. C'est le suspect
+  le mieux placé, et le seul qu'on puisse retirer sans rien perdre
+  d'essentiel. Plume tient donc plus de mémoire : un navigateur qui pèse vaut
+  mieux qu'un navigateur qui ferme. Le module, le délai et le point qui
+  marquait un onglet endormi partent avec.
+- **La reprise automatique est coupée par défaut.** Détecter un gel est une
+  chose, fermer le navigateur de quelqu'un en est une autre, et une fausse
+  alerte coûte plus cher que le gel. Plume constate, l'écrit dans
+  profil/plantages.txt, et s'arrête là ; « Relancer Plume » attend dans le
+  panneau de la roue. Le réglage `reprise_auto` de config.json la remet en
+  marche pour qui la veut.
+- **Plume prend le pouls de la page qu'on regarde, et sort du gel toute
+  seule.** Jusqu'ici, une page qui cessait de répondre le restait : ni F5 ni
+  une adresse ne l'atteignaient, et il fallait quitter Plume et la relancer.
+  Elle pose maintenant une question triviale au moteur toutes les quatre
+  secondes, et c'est qu'une réponse arrive qui compte. Ce qui se mesure est
+  l'âge de la question restée en l'air, jamais le temps écoulé depuis le
+  dernier mot : un onglet laissé de côté n'est pas interrogé, et le prendre
+  pour un gelé ferait recharger des pages saines. Passé vingt-cinq secondes
+  sans réponse, Plume demande leur pouls aux autres onglets et leur laisse le
+  temps de répondre : si l'un répond, le moteur va bien et c'est ce rendu-là
+  qui est pris, sa vue est refaite ; si aucun ne répond, c'est le moteur
+  entier, et Plume enregistre la session et repart, ce qu'on faisait à la
+  main.
+- **« Relancer Plume » dans le panneau de la roue.** C'est la seule commande
+  qui réponde encore quand toutes les pages sont figées, puisqu'elle est
+  dessinée par Plume et non par le moteur. Les onglets sont retrouvés.
+- **Les fenêtres demandées par une page s'ouvrent vraiment.** Plume ouvrait
+  un onglet à la bonne adresse et s'arrêtait là, alors qu'une page qui appelle
+  window.open attend un objet fenêtre, celui dans lequel elle écrit ensuite.
+  Les sites qui ouvrent « about:blank » puis y posent leur contenu, dont les
+  publicités à regarder avant un stream, ne donnaient donc qu'un onglet blanc,
+  définitivement blanc. La fenêtre est maintenant rendue à la page.
+- **Une publicité se reconnaît aussi à ses paramètres.** L'adresse signalée
+  portait lp_key, clickid, trk, feed et zone sur un domaine jetable qu'aucune
+  liste ne connaîtra jamais. Ce sont désormais les paires de paramètres qui la
+  trahissent, comparées par nom exact pour qu'un « timezone » ne passe pas
+  pour une zone vendue, ainsi qu'une marque plus sûre encore : le domaine qui
+  commence par l'identifiant du clic qu'il transporte.
+- **Une fenêtre publicitaire refusée le dit, et laisse le dernier mot.**
+  Certains sites réclament qu'on regarde leurs publicités avant de montrer ce
+  qu'on est venu voir : un refus silencieux laissait devant une page qui
+  n'avance plus, sans dire pourquoi. Un bandeau l'annonce et propose de
+  l'ouvrir quand même, et cet onglet-là n'est plus filtré.
+- **La page des nouveautés ne se dénonce plus elle-même.** Elle récite le
+  journal des versions, où il est question de l'arnaque « cliquez sur
+  autoriser pour prouver que vous n'êtes pas un robot ». La détection y
+  trouvait une supplique et un prétexte, et posait son écran d'avertissement
+  sur une page de Plume. Une arnaque aux notifications arrive par le web et
+  jamais par un fichier local : l'alerte ne vise plus que les pages en http
+  et https.
+- **Un onglet laissé de côté ne revient plus muet.** Un onglet d'arrière-plan
+  est suspendu au bout de quatre-vingt-dix secondes. Y revenir pendant cette
+  suspension ne réveillait rien, l'onglet n'étant marqué endormi qu'une fois
+  l'opération terminée : la suspension aboutissait alors sur une page qu'on
+  regardait. Plus rien ne répondait, et taper une adresse n'y changeait rien
+  non plus, un moteur suspendu ignorant les navigations qu'on lui adresse. Une
+  suspension s'annule désormais si l'on revient, un réveil n'est noté que s'il
+  a vraiment eu lieu, toutes les façons de naviguer réveillent l'onglet
+  d'abord, et un onglet qu'on regarde que le moteur dit suspendu est ranimé :
+  au retour sur la fenêtre, à son redimensionnement, et sinon toutes les
+  quinze secondes. Une vue ranimée reprend enfin la taille du moment :
+  suspendue, elle n'avait pas suivi les changements, d'où cette page dessinée
+  aux trois quarts dans le coin de la fenêtre, que même un agrandissement ne
+  corrigeait pas.
+- **Après un incident du moteur, Plume ne disparaît plus entièrement.** La
+  nouvelle Plume attend l'ancienne, mais quand celle-ci survivait à l'attente,
+  la nouvelle lui confiait l'adresse et s'en allait, et l'ancienne se fermait
+  juste après. Le journal des incidents montre exactement ce cas. Une Plume
+  relancée après un incident ouvre maintenant sa propre fenêtre et ne confie
+  rien : deux fenêtres valent mieux qu'aucun navigateur.
 - **Les pages qui ne posent aucun fond sont de nouveau lisibles.** Plume peint
   un fond sombre sous les pages pour qu'un onglet neuf ne lance pas un éclair
   blanc, mais c'est aussi le fond que reçoit une page qui n'en pose aucun :
@@ -23,6 +99,9 @@ changement, avec ses raisons, est dans les messages de commit.
   signale vide une seconde fois, ou quand le moteur annonce un rendu qui ne
   répond plus. Trois tentatives au plus, pour qu'une page vide de naissance ne
   tourne pas en boucle.
+
+## 1.0.24 (2026-09-30)
+
 - **Plume ne se ferme plus toute seule après un incident du moteur.** Le
   redémarrage ajouté dans cette version lançait la nouvelle Plume pendant que
   l'ancienne vivait encore : la nouvelle trouvait le canal local occupé, en

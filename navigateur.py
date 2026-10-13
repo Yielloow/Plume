@@ -32,7 +32,7 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import clr
 
@@ -99,7 +99,7 @@ from Microsoft.Web.WebView2.Core import (                          # noqa: E402
     CoreWebView2BrowsingDataKinds, CoreWebView2Environment,
     CoreWebView2PermissionKind, CoreWebView2PermissionState,
     CoreWebView2ProcessFailedKind,
-    CoreWebView2FaviconImageFormat, CoreWebView2MemoryUsageTargetLevel,
+    CoreWebView2FaviconImageFormat,
     CoreWebView2WebResourceContext)
 from Microsoft.Web.WebView2.WinForms import (                      # noqa: E402
     CoreWebView2CreationProperties, WebView2)
@@ -192,6 +192,20 @@ MOTIFS_PUBS = ["*://*.%s/*" % hote for hote in HOTES_PUBS] + [
 # elle transporte l'identifiant du clic, le prix paye, la zone vendue. Deux
 # marques sont exigees pour les plus communes : une seule ferait des
 # victimes innocentes.
+# Les parametres qui, pris deux a deux, ne laissent aucun doute : un
+# identifiant de clic avec une cle de page d'atterrissage, un tracker, une
+# zone ou un flux vendus. Compares par NOM exact et non cherches dans
+# l'adresse : « timezone= » contient « zone= », et un agenda honnete s'en sert.
+PAIRES_PUBS = (
+    ("clickid", "lp_key"),
+    ("clickid", "trk"),
+    ("clickid", "zone"),
+    ("clickid", "feed"),
+    ("clickid", "cost"),
+    ("clickid", "tsid"),
+    ("zoneid", "var"),
+)
+
 SIGNATURES_PUBS = (
     ("/afu.php",),
     ("extclickid=",),
@@ -1303,19 +1317,30 @@ MAX_RESTAURES = 20    # au-dela, rouvrir la session couterait trop de memoire
 MAX_FENETRES = 4      # meme raison : chaque onglet pese environ 390 Mo
 SEUIL_DETACHE = 26    # pixels sous la barre avant qu'un onglet s'en detache
 MAX_SUGGESTIONS = 8
-# La veille est verifiee a intervalle regulier plutot qu'a chaque evenement :
-# un onglet endormi n'a plus rien qui puisse nous prevenir.
-PERIODE_VEILLE = 15000       # ms
+# Le pouls : a quelle cadence Plume demande une reponse a la page regardee,
+# et combien de temps une question peut rester en l'air avant qu'on parle de
+# gel. Ce qui se mesure est bien l'attente d'une reponse, et non le temps
+# ecoule depuis le dernier mot : un onglet d'arriere-plan n'est jamais
+# interroge, et le prendre pour un gele faisait refaire la vue de pages
+# saines, video ramenee a son debut.
+PERIODE_POULS = 4000         # ms
+# Chrome lui-meme attend une trentaine de secondes avant de declarer une
+# page sans reponse : en dessous, on prendrait un site lourd pour un gel, et
+# refaire la vue d'une video la ramene a son debut.
+SILENCE_VUE = 25.0           # secondes sans reponse avant de refaire la vue
+SILENCE_MOTEUR = 55.0        # secondes avant de relancer Plume
+# Entre le moment ou l'on interroge les autres onglets et celui ou l'on
+# conclut qu'aucun ne repond, il faut leur laisser le temps de repondre.
+# Sans ce delai, la premiere mesure servait de verdict : Plume s'est
+# relancee sur un moteur en pleine forme, le 12 octobre a 4 h 04.
+DELAI_SECOND_AVIS = 10.0     # secondes
 # Animation des onglets. Deux durees et deux courbes : l'ouverture ralentit en
 # arrivant, la fermeture accelere en partant. Une seule courbe pour les deux
 # donne un mouvement mou, on l'a deja mesure sur l'animation du lecteur.
 PERIODE_ANIM = 16            # ms, soit environ 60 images par seconde
-# Au-dela, une page video dont la memoire est repartie est rechargee sans
-# examen : mesure de prudence, son lecteur ne repart quasiment jamais.
-VEILLE_LONGUE = 900          # secondes
-# Au-dela, revenir sur une page video vaut examen du lecteur, meme si Plume
-# ne l'a pas endormie : la machine a pu dormir, ou Windows reprendre la
-# memoire d'un processus d'arriere-plan.
+# Au-dela, revenir sur une page video vaut examen de son lecteur : la
+# machine a pu dormir, ou Windows reprendre la memoire d'un processus
+# d'arriere-plan, et le lecteur n'y survit pas toujours.
 ABSENCE_SUSPECTE = 300       # secondes
 # Passe ce delai sans reponse, la page est tenue pour perdue.
 ATTENTE_REPONSE = 4.0
@@ -1354,7 +1379,6 @@ MOTEURS = (
 )
 # Les hauteurs que Twitch diffuse reellement : au-dela de 1440, rien.
 QUALITES = ((480, "480p"), (720, "720p"), (1080, "1080p"), (1440, "1440p"))
-VEILLES = (0, 30, 90, 300, 600, 1800)   # secondes, 0 pour jamais
 FENETRES = []         # fenetres Plume ouvertes, dans l'ordre de creation
 DERNIERE = [None]     # derniere fenetre activee, cible des ouvertures
 MARGE_CROIX = 26      # place reservee a droite pour la croix
@@ -1804,9 +1828,39 @@ JS_SANS_PUB = r"""
   // Et la forme de l'adresse, pour les domaines jetables.
   var SIGNATURE = new RegExp("__SIGNATURE__", "i");
 
+  // Les memes paires de parametres que du cote de Plume, et pour la meme
+  // raison : un domaine jetable ne se reconnait qu'a ce qu'il transporte.
+  var PAIRES = [["clickid", "lp_key"], ["clickid", "trk"],
+                ["clickid", "zone"], ["clickid", "feed"],
+                ["clickid", "cost"], ["clickid", "tsid"],
+                ["zoneid", "var"]];
+
+  function parametres_de(adresse) {
+    var requete = String(adresse || "").split("#")[0].split("?")[1] || "";
+    var noms = {};
+    var morceaux = requete.split("&");
+    for (var i = 0; i < morceaux.length; i++) {
+      if (!morceaux[i]) continue;
+      var coupe = morceaux[i].indexOf("=");
+      var nom = (coupe < 0 ? morceaux[i] : morceaux[i].slice(0, coupe));
+      noms[nom.toLowerCase()] = (coupe < 0 ? "" : morceaux[i].slice(coupe + 1));
+    }
+    return noms;
+  }
+
   function publicitaire(adresse) {
     var texte = String(adresse || "");
-    return SIGNATURE.test(texte) || REGIES.test(hote_de(texte));
+    if (SIGNATURE.test(texte) || REGIES.test(hote_de(texte))) return true;
+    var p = parametres_de(texte);
+    for (var i = 0; i < PAIRES.length; i++) {
+      if (p[PAIRES[i][0]] !== undefined && p[PAIRES[i][1]] !== undefined) {
+        return true;
+      }
+    }
+    // Le domaine qui porte l'identifiant du clic : la marque la plus sure.
+    var tete = hote_de(texte).split(".")[0];
+    var clic = (p["clickid"] || p["click_id"] || "").toLowerCase();
+    return !!(tete.length >= 8 && clic && clic === tete);
   }
 
   function compter() {
@@ -2097,7 +2151,7 @@ JS_SANS_PUB = r"""
 """
 
 
-# Ce que la page repond apres une veille profonde : vrai si son lecteur est
+# Ce que la page repond apres une longue absence : vrai si son lecteur est
 # hors d'usage. Trois signes, du plus sur au plus discret : le carton
 # d'erreur de YouTube, une video qui porte un code d'erreur, et une video
 # chargee qui a perdu toute sa matiere.
@@ -2368,6 +2422,12 @@ JS = r"""
 
   function regarder_arnaque() {
     if (arnaque_dite) return;
+    // Jamais sur les pages de Plume. Celle des nouveautes recite le journal
+    // des versions, ou il est question d'arnaques, de notifications et de
+    // fausses cases « je ne suis pas un robot » : elle se denoncait
+    // elle-meme. Et de toute facon une arnaque aux notifications arrive par
+    // le web, pas par un fichier pose sur le disque.
+    if (location.protocol !== "http:" && location.protocol !== "https:") return;
     var corps = document.body ? (document.body.innerText || "") : "";
     var texte = (document.title || "") + " " + corps.slice(0, 4000);
     var supplie = APPEL.test(texte) && PRETEXTE.test(texte);
@@ -2471,6 +2531,39 @@ FONDU_BULLE = 180
 PAS_FONDU = 15
 
 
+def _noms_de_parametres(adresse):
+    """Les noms des parametres de cette adresse, en minuscules."""
+    try:
+        requete = urlparse(str(adresse or "")).query
+    except Exception:
+        return frozenset()
+    return frozenset(m.split("=", 1)[0].lower()
+                     for m in requete.split("&") if m)
+
+
+def _hote_porte_le_clic(adresse):
+    """Vrai quand le domaine commence par l'identifiant du clic lui-meme.
+
+    Une regie donne a chaque clic son propre sous-domaine et y repete son
+    identifiant : db4sp32naffc73bt8ep0.jicl-protect.co.in porte
+    clickid=db4sp32naffc73bt8ep0. Un site n'a aucune raison de faire cela,
+    et c'est ce qui rend la marque sure malgre un domaine inconnu.
+    """
+    try:
+        morceaux = urlparse(str(adresse or ""))
+        tete = (morceaux.hostname or "").lower().split(".")[0]
+        valeurs = parse_qs(morceaux.query)
+    except Exception:
+        return False
+    if len(tete) < 8:
+        return False        # trop court pour etre un identifiant
+    for nom in ("clickid", "click_id", "subid"):
+        for valeur in valeurs.get(nom, ()):
+            if valeur and valeur.lower() == tete:
+                return True
+    return False
+
+
 def _vers_une_regie(adresse):
     """Vrai si cette adresse mene a une publicite, par son nom ou sa forme.
 
@@ -2487,8 +2580,13 @@ def _vers_une_regie(adresse):
     if hote and any(hote == regie or hote.endswith("." + regie)
                     for regie in HOTES_PUBS):
         return True
-    return any(all(marque in basse for marque in signature)
-               for signature in SIGNATURES_PUBS)
+    if any(all(marque in basse for marque in signature)
+           for signature in SIGNATURES_PUBS):
+        return True
+    noms = _noms_de_parametres(texte)
+    if any(un in noms and deux in noms for un, deux in PAIRES_PUBS):
+        return True
+    return _hote_porte_le_clic(texte)
 
 
 def _ouverture_en_arriere_plan():
@@ -2511,7 +2609,7 @@ def _ouverture_en_arriere_plan():
 class Onglet(object):
     """Un onglet : sa vue WebView2, son favicon, et sa vignette dessinee."""
 
-    def __init__(self, navigateur, url):
+    def __init__(self, navigateur, url, naviguer=True):
         self.nav = navigateur
         self.url = url
         self.titre = core.t("tache_onglet")
@@ -2531,11 +2629,6 @@ class Onglet(object):
         self.taille_mesure = None
         self.survole = False
         self.survol_croix = False
-        self.endormi = False
-        # Vrai quand la memoire de la page est repartie a Windows : ce qui
-        # peut laisser son lecteur video hors d'etat de repartir.
-        self._memoire_rendue = False
-        self._debut_veille = 0.0
         self.derniere_activite = time.time()
         # Part de sa largeur finale, de 0 a 1. L'onglet s'ouvre en s'ecartant.
         self.echelle = 1.0
@@ -2552,6 +2645,9 @@ class Onglet(object):
         # Identifiant du script qui retire les pubs, rendu par WebView2 :
         # sans lui, impossible de le retirer quand le module est coupe.
         self._id_sans_pub = None
+        # Onglet ouvert expres pour une publicite, depuis le bandeau de refus :
+        # le filtre n'y a plus rien a faire, il n'existe que pour elle.
+        self.pub_autorisee = False
         # Adresse deja signalee vide, et ce qu'on a tente pour elle : trois
         # fois au plus, sous peine de boucler sur une page qui est vide de
         # naissance.
@@ -2559,16 +2655,28 @@ class Onglet(object):
         self._vide_tentatives = 0
         # Vrai pendant qu'on remplace la vue de cet onglet.
         self._refection = False
+        # Le pouls : quand on a eu pour la derniere fois la preuve que le
+        # moteur repond pour cet onglet, et une question restee en l'air.
+        self._pouls_recu = time.time()
+        self._pouls_envoye = 0.0
+        # Remedes deja tentes pour ce silence-ci.
+        self._remedes = 0
         self.rect = Rectangle(0, 0, 0, 0)
+        # Ce qui attend le noyau de la vue : il nait un instant apres elle.
+        self._au_noyau = []
 
-        self.construire_vue(url)
+        self.construire_vue(url, naviguer=naviguer)
 
     # ------------------------------------------------------------------
-    def construire_vue(self, url):
+    def construire_vue(self, url, naviguer=True):
         """Fabrique la vue WebView2 de cet onglet et la pose dans la fenetre.
 
         A part du constructeur parce qu'on la refait parfois a neuf : un rendu
         fige ne se repare pas, il se remplace.
+
+        `naviguer` est faux pour une fenetre demandee par une page : c'est
+        elle qui conduira la vue, et une vue deja partie ailleurs ne peut plus
+        lui etre donnee.
         """
         navigateur = self.nav
         self.vue = WebView2()
@@ -2622,7 +2730,8 @@ class Onglet(object):
 
         self.vue.CoreWebView2InitializationCompleted += self.au_pret
         self.vue.EnsureCoreWebView2Async(None)
-        self.vue.Source = Uri(url)
+        if naviguer:
+            self.vue.Source = Uri(url)
 
     def poser_fond_canevas(self, sombre):
         """Le fond du navigateur, sous la page : sombre, ou blanc.
@@ -2681,11 +2790,9 @@ class Onglet(object):
         except Exception as e:
             journal("vue refaite, retrait : %r" % (e,))
         # La vue neuve n'herite de rien : ni du script a retirer, ni de la
-        # veille, ni de la zone du lecteur mesuree dans l'ancienne.
+        # zone du lecteur mesuree dans l'ancienne.
         self._id_sans_pub = None
-        self.endormi = False
-        self._memoire_rendue = False
-        self._debut_veille = 0.0
+        self.pub_autorisee = False
         self.derniere_activite = time.time()
         self.zone_page = None
         self.taille_mesure = None
@@ -2757,108 +2864,99 @@ class Onglet(object):
             noyau.WebResourceRequested += self.au_requete
         except Exception as e:
             journal("init onglet : %s" % e)
+        # Le noyau existe : c'est deja une preuve de vie.
+        self._pouls_recu = time.time()
+        self._pouls_envoye = 0.0
+        # Ce qui attendait la vue : une fenetre a rendre, le plus souvent.
+        for action in self._vider_attentes():
+            try:
+                action()
+            except Exception as e:
+                journal("attente du noyau : %r" % (e,))
 
-    def endormir(self):
-        """Gele l'onglet : la page reste entiere, mais elle cesse de tourner.
+    def _vider_attentes(self):
+        attentes, self._au_noyau = list(self._au_noyau), []
+        return attentes
 
-        Suspendre n'est pas decharger. Le DOM, le defilement et les champs
-        remplis restent en place ; ce sont les minuteurs, les scripts et les
-        connexions qui s'arretent, et c'est la que passe la memoire d'un onglet
-        qu'on ne regarde pas. Le retour est instantane, sans rechargement.
+    def au_noyau_pret(self, action):
+        """Execute `action` des que le noyau de cette vue existe.
+
+        Il peut deja exister : la vue d'un onglet repris est prete avant
+        qu'on ne lui demande quoi que ce soit.
         """
-        if self.endormi:
+        try:
+            if self.vue.CoreWebView2 is not None:
+                action()
+                return
+        except Exception as e:
+            journal("noyau pret : %r" % (e,))
+        self._au_noyau.append(action)
+
+    def oublier_le_pouls(self):
+        """On ne peut rien conclure : le compteur repart de maintenant.
+
+        C'est le cas quand la fenetre est au second plan, ou l'onglet de
+        cote : Windows ralentit alors les minuteurs de la page, et une
+        lenteur voulue n'est pas un gel.
+        """
+        self._pouls_recu = time.time()
+        self._pouls_envoye = 0.0
+        self._remedes = 0
+
+    def prendre_le_pouls(self):
+        """Pose au moteur une question triviale, et note s'il y repond.
+
+        Une page gelee ne repond pas, et c'est tout ce qu'on cherche a
+        savoir : le contenu de la reponse n'a aucune importance. Une seule
+        question a la fois, sans quoi on en empilerait une toutes les quatre
+        secondes devant un moteur qui ne les lit plus.
+        """
+        if self._pouls_envoye:
             return
         try:
             noyau = self.vue.CoreWebView2
             if noyau is None:
-                journal("veille : %s sans noyau" % str(self.url)[:70])
                 return
-            if noyau.IsSuspended:
-                # Deja suspendu sans que Plume l'ait su : l'etat local
-                # rattrape le vrai, sinon l'onglet reste « eveille » pour
-                # toujours dans nos comptes.
-                journal("veille : %s deja suspendu" % str(self.url)[:70])
-                self.endormi = True
-                self.nav.rafraichir_onglets()
-                return
-            # A demander avant : une fois suspendu, plus rien ne repond.
-            # La memoire retourne a Windows : c'est la ou la veille gagne
-            # vraiment. Le lecteur video n'y survit pas toujours ; c'est le
-            # reveil qui s'en apercoit et recharge la page.
-            noyau.MemoryUsageTargetLevel = (
-                CoreWebView2MemoryUsageTargetLevel.Low)
-            self._memoire_rendue = True
-            self._debut_veille = time.time()
-            tache = noyau.TrySuspendAsync()
+            self._pouls_envoye = time.time()
+            tache = noyau.ExecuteScriptAsync("1")
         except Exception as e:
-            journal("veille : refus pour %s : %r" % (self.url, e))
+            journal("pouls : question impossible : %r" % (e,))
+            self._pouls_envoye = 0.0
             return
 
-        def quand_pret(terminee):
-            # Le resultat se lit sur le fil qui possede la fenetre, comme tout
-            # le reste de WebView2.
-            try:
-                if not terminee.Result:
-                    journal("veille : refusee pour %s" % self.url)
-                    return
-                self.endormi = True
-                journal("veille : %s endormi" % str(self.url)[:70])
-                self.nav.rafraichir_onglets()
-            except Exception as e:
-                journal("veille : suite impossible : %r" % (e,))
+        def repondu(terminee):
+            # Rappel sur un fil du pool : on n'y touche que deux nombres,
+            # et rien de WebView2 ni de la fenetre.
+            self._pouls_envoye = 0.0
+            self._pouls_recu = time.time()
+            self._remedes = 0
 
         try:
-            tache.ContinueWith(Action[Task](quand_pret))
+            tache.ContinueWith(Action[Task](repondu))
         except Exception as e:
-            journal("veille : suite refusee : %r" % (e,))
+            journal("pouls : reponse non attendue : %r" % (e,))
+            self._pouls_envoye = 0.0
 
-    def joue_du_son(self):
-        """Vrai si la page fait du bruit : video, musique, appel.
+    def sans_reponse(self):
+        """Depuis combien de temps notre question attend, 0 si aucune.
 
-        WebView2 le sait pour toute la page, lecteur du site compris. Depuis
-        que YouTube garde son lecteur, c'est la seule facon de distinguer un
-        onglet qu'on ecoute d'un onglet oublie.
+        C'est la seule mesure honnete du gel. Le temps ecoule depuis le
+        dernier signe de vie ne vaut rien : un onglet d'arriere-plan n'est
+        jamais interroge, et son dernier mot date donc du moment ou on l'a
+        quitte. Mesure sur cette erreur, une page revue apres une heure de
+        cote paraissait muette depuis une heure, et sa vue etait refaite
+        alors qu'elle se portait bien.
+
+        La reponse arrive sur un fil du pool : cette mesure reste donc juste
+        meme si le fil de la fenetre est, lui, occupe ailleurs.
         """
-        try:
-            noyau = self.vue.CoreWebView2
-            return bool(noyau is not None and noyau.IsDocumentPlayingAudio)
-        except Exception:
-            return False
+        if not self._pouls_envoye:
+            return 0.0
+        return time.time() - self._pouls_envoye
 
-    def reveiller(self):
-        """Rend l'onglet a la vie : il etait gele, pas ferme, rien a recharger.
-
-        Sauf si sa memoire etait repartie a Windows et que la page est une
-        page video : son lecteur en sort parfois hors d'usage, et c'est
-        seulement ici qu'on peut le rattraper.
-        """
-        self.derniere_activite = time.time()
-        if not self.endormi:
-            return
-        self.endormi = False
-        rendue, self._memoire_rendue = self._memoire_rendue, False
-        dormi = time.time() - (self._debut_veille or time.time())
-        try:
-            noyau = self.vue.CoreWebView2
-            if noyau is not None:
-                noyau.Resume()
-                noyau.MemoryUsageTargetLevel = (
-                    CoreWebView2MemoryUsageTargetLevel.Normal)
-            journal("veille : %s reveille apres %.0f s"
-                    % (str(self.url)[:70], dormi))
-        except Exception as e:
-            journal("veille : reveil impossible : %r" % (e,))
-            return
-        if not rendue or not core.est_video(self.url or ""):
-            return
-        if dormi >= VEILLE_LONGUE:
-            # Trop longtemps sans memoire : le lecteur ne s'en remet
-            # generalement pas, et attendre le premier clic pour s'en
-            # apercevoir ferait deux attentes au lieu d'une.
-            journal("veille : rechargement apres %.0f s sans memoire" % dormi)
-            self.nav.recharger_onglet(self)
-            return
-        self.nav.verifier_lecteur(self)
+    def repond_depuis_peu(self, delai):
+        """Vrai si cet onglet a donne signe de vie depuis moins de `delai`."""
+        return (time.time() - self._pouls_recu) < delai
 
     def au_action_lecteur(self, nom, valeur):
         """Ce que la barre de mpv demande a la page.
@@ -3078,7 +3176,9 @@ class Onglet(object):
         # publicitaire, celle qui remplace la page qu'on regardait. Le
         # blocage des fenetres ne couvrait que celles ouvertes a cote.
         try:
-            if core.module_actif("ext_sans_pub") and _vers_une_regie(args.Uri):
+            if (core.module_actif("ext_sans_pub")
+                    and _vers_une_regie(args.Uri)
+                    and not self.pub_autorisee):
                 args.Cancel = True
                 self.nav.pubs_bloquees += 1
                 journal("redirection refusee : %s" % str(args.Uri)[:80])
@@ -3221,13 +3321,64 @@ class Onglet(object):
                 self.nav.pubs_bloquees += 1
                 journal("fenetre publicitaire refusee : %s"
                         % str(args.Uri)[:80])
+                # Dit, et non tu : des sites exigent qu'on regarde leurs
+                # publicites avant de rendre ce qu'on est venu chercher, et
+                # un refus silencieux laisse devant une page qui n'avance
+                # plus sans qu'on sache pourquoi.
+                self.nav.proposer_pub_refusee(str(args.Uri))
                 return
             derriere = _ouverture_en_arriere_plan()
             journal("nouvel onglet demande par la page : %s%s"
                     % (str(args.Uri)[:90], " (derriere)" if derriere else ""))
-            self.nav.nouvel_onglet(str(args.Uri), arriere_plan=derriere)
+            self.ouvrir_fenetre_demandee(args, derriere)
         except Exception as e:
             journal("nouvelle fenetre : %s" % e)
+
+    def ouvrir_fenetre_demandee(self, args, derriere):
+        """Donne a la page la fenetre qu'elle demande, sous forme d'onglet.
+
+        Ouvrir un onglet a la meme adresse ne suffit pas : window.open rend un
+        objet fenetre, et c'est dedans que la page ecrit ensuite. Les sites
+        qui ouvrent « about:blank » puis y posent leur contenu n'obtenaient
+        donc qu'un onglet blanc, definitivement blanc.
+
+        WebView2 demande pour cela une vue qui n'a navigue nulle part, d'ou
+        l'onglet cree sans adresse, et une reponse differee, le temps que son
+        noyau existe.
+        """
+        adresse = str(args.Uri or "")
+        try:
+            report = args.GetDeferral()
+        except Exception as e:
+            # Sans report possible, on retombe sur l'ancien comportement :
+            # un onglet a la bonne adresse, sans lien avec la page.
+            journal("fenetre demandee, report impossible : %r" % (e,))
+            self.nav.nouvel_onglet(adresse, arriere_plan=derriere)
+            return
+        onglet = self.nav.nouvel_onglet(adresse, arriere_plan=derriere,
+                                        naviguer=False)
+
+        def rendre():
+            rendue = False
+            try:
+                args.NewWindow = onglet.vue.CoreWebView2
+                rendue = True
+            except Exception as e:
+                journal("fenetre non rendue : %r" % (e,))
+            try:
+                report.Complete()
+            except Exception as e:
+                journal("fenetre demandee, fin du report : %r" % (e,))
+            if not rendue:
+                # La page n'aura pas sa fenetre : au moins l'onglet montre
+                # quelque chose plutot que de rester blanc.
+                try:
+                    if adresse.startswith(("http://", "https://")):
+                        onglet.vue.Source = Uri(adresse)
+                except Exception as e:
+                    journal("fenetre demandee, repli : %r" % (e,))
+
+        onglet.au_noyau_pret(rendre)
 
     def au_message(self, envoyeur, args):
         try:
@@ -3354,7 +3505,6 @@ class Navigateur(Form):
         self._liste = None            # fenetre de la liste, creee au besoin
         self._maj_programmee = False  # vrai quand c'est nous qui ecrivons
         self.zooms = core.charger_zooms()
-        self.minuteur_veille = None
         self.minuteur_anim = None
         self._fantomes = []       # onglets fermes, le temps de se retirer
         self._glisse_page = None  # glissement de page en cours, s'il y en a
@@ -3436,7 +3586,14 @@ class Navigateur(Form):
         if not vide:
             self.restaurer_session(depart)
         self._restauration = False
-        self.demarrer_veille()
+        # Le pouls tourne toujours, lui : il ne depend d'aucun reglage, et
+        # c'est le seul moyen de voir un moteur qui ne repond plus.
+        # Depuis quand la page regardee est jugee sans reponse.
+        self._escalade = 0.0
+        self.minuteur_pouls = Timer()
+        self.minuteur_pouls.Interval = PERIODE_POULS
+        self.minuteur_pouls.Tick += self.surveiller_le_pouls
+        self.minuteur_pouls.Start()
 
     # ------------------------------------------------------------------
     # Construction
@@ -3926,9 +4083,7 @@ class Navigateur(Form):
                 except Exception:
                     pass
 
-            if onglet.endormi:
-                couleur_titre = ui.TEXTE3
-            elif actif:
+            if actif:
                 couleur_titre = ui.TEXTE
             else:
                 couleur_titre = ui.TEXTE2
@@ -3939,11 +4094,6 @@ class Navigateur(Form):
                     couleur_titre, 255 * onglet.echelle * onglet.echelle)
             ui.texte_tronque(g, onglet.titre, self.police, couleur_titre,
                              x + decalage, 14, largeur_vue - decalage - 28, 18)
-            if onglet.endormi:
-                # Un point en retrait vaut mieux qu'une icone : il dit « en
-                # veille » sans laisser croire que l'onglet est casse.
-                ui.remplir_arrondi(g, ui.TEXTE3, x + 4, 21, 4, 4, 2)
-
             if naissance:
                 # La marque de Plume eclot a la place de l'icone, et un trait
                 # d'accent balaye le haut de l'onglet : une ouverture qui se
@@ -5284,10 +5434,6 @@ class Navigateur(Form):
                     onglet.retirer_sans_pub()
             except Exception as e:
                 journal("modules : %r" % (e,))
-        if core.module_actif("ext_veille"):
-            self.demarrer_veille()
-        else:
-            self.arreter_veille()
         if not core.module_actif("ext_lecteur_twitch"):
             for onglet in list(self.onglets):
                 try:
@@ -5353,9 +5499,9 @@ class Navigateur(Form):
             core.definir_reglage("theme", valeur)
             appliquer_theme_partout()
             return
-        if cle not in ("moteur_recherche", "qualite_max", "veille_onglets",
+        if cle not in ("moteur_recherche", "qualite_max",
                        "intro", "glissement_onglets", "ext_sans_pub",
-                       "ext_lecteur_twitch", "ext_veille",
+                       "ext_lecteur_twitch",
                        "mots_de_passe", "remplissage", "historique"):
             journal("reglage inconnu : %s" % cle)
             return
@@ -5364,7 +5510,7 @@ class Navigateur(Form):
             for fenetre in list(FENETRES):
                 for onglet in list(fenetre.onglets):
                     onglet.appliquer_confidentialite()
-        if cle.startswith("ext_") or cle == "veille_onglets":
+        if cle.startswith("ext_"):
             for fenetre in list(FENETRES):
                 try:
                     fenetre.appliquer_modules()
@@ -5533,23 +5679,13 @@ class Navigateur(Form):
                     % (_echapper(core.t("param_qualite")),
                        choix("qualite_max", QUALITES,
                              cfg.get("qualite_max"))))
-        veilles = ('<span>%s</span><select onchange="dire(\'veille_onglets\','
-                   ' parseInt(this.value, 10))">%s</select>'
-                   % (_echapper(core.t("param_delai")),
-                      choix("veille_onglets",
-                            tuple((v, self._dire_veille(v))
-                                  for v in self._veilles_offertes()),
-                            int(cfg.get("veille_onglets") or 0))))
         modules = "".join((
             module("ext_sans_pub", core.t("param_ext_pub"),
                    core.t("param_ext_pub_aide"),
                    core.module_actif("ext_sans_pub")),
             module("ext_lecteur_twitch", core.t("param_ext_twitch"),
                    core.t("param_ext_twitch_aide"),
-                   core.module_actif("ext_lecteur_twitch"), qualites),
-            module("ext_veille", core.t("param_ext_veille"),
-                   core.t("param_ext_veille_aide"),
-                   core.module_actif("ext_veille"), veilles)))
+                   core.module_actif("ext_lecteur_twitch"), qualites)))
 
         # Les identifiants retenus par le moteur. Le mot de passe n'est ni
         # lu ni affiche : seulement ou il sert, et depuis quand.
@@ -5702,7 +5838,7 @@ class Navigateur(Form):
             moteur = "?"
         modules = ", ".join(
             "%s %s" % (cle, "actif" if core.module_actif(cle) else "inactif")
-            for cle in ("ext_sans_pub", "ext_lecteur_twitch", "ext_veille"))
+            for cle in ("ext_sans_pub", "ext_lecteur_twitch"))
         return "\n".join((
             "Plume %s" % core.VERSION,
             "Windows %s" % platform.version(),
@@ -6005,17 +6141,20 @@ class Navigateur(Form):
                 continue
         core.enregistrer_session({"fenetres": fenetres})
 
-    def nouvel_onglet(self, url=None, arriere_plan=False):
+    def nouvel_onglet(self, url=None, arriere_plan=False, naviguer=True):
         """Ouvre un onglet. `arriere_plan` le pose sans quitter la page.
 
         C'est ce que fait le clic du milieu sur un lien : on continue de lire,
         l'onglet attend son tour.
+
+        `naviguer` est faux quand l'onglet accueille une fenetre demandee par
+        une page : c'est elle qui l'emmenera ou elle veut.
         """
         url = url or ACCUEIL
         journal("onglet ouvert : %s" % str(url)[:90])
-        if url == ACCUEIL:
+        if naviguer and url == ACCUEIL:
             self.ecrire_accueil()
-        onglet = Onglet(self, url)
+        onglet = Onglet(self, url, naviguer=naviguer)
         # Pas d'animation pendant la reprise de session : vingt onglets qui
         # s'ecartent l'un apres l'autre au lancement font une entree en scene,
         # pas une interface.
@@ -6039,7 +6178,7 @@ class Navigateur(Form):
         # meme cote que si on l'avait choisi dans la barre. Pas pendant une
         # reprise de session, ou vingt pages defileraient au lancement.
         self.activer(onglet, glisser=not self._restauration)
-        if url == ACCUEIL:
+        if naviguer and url == ACCUEIL:
             # Comme dans les autres navigateurs : un onglet neuf attend une
             # adresse. La page locale ne prend pas le focus, mais WebView2 le
             # reclame en fin de chargement, d'ou le rappel dans `traiter`.
@@ -6414,6 +6553,10 @@ class Navigateur(Form):
                       "texte": core.t("hist_titre")})
         items.append({"genre": "action", "cle": "telechargements",
                       "texte": core.t("reglages_telechargements")})
+        # Dessine par Plume, donc toujours vivant : c'est la seule commande
+        # qui reponde encore quand toutes les pages sont figees.
+        items.append({"genre": "action", "cle": "relancer",
+                      "texte": core.t("moteur_relancer")})
         items.append({"genre": "separateur"})
         items.append({"genre": "page", "texte": core.t("param_ouvrir")})
         items.append({"genre": "maj", "texte": core.t("reglages_maj")})
@@ -6423,23 +6566,6 @@ class Navigateur(Form):
             items.append({"genre": "defaut",
                           "texte": core.t("accueil_defaut")})
         return items
-
-    def _veilles_offertes(self):
-        """Les delais proposes, plus celui qui est regle s'il n'y est pas.
-
-        Quelqu'un qui a mis sa propre valeur dans config.json doit la voir
-        affichee, pas se la faire remplacer par la plus proche.
-        """
-        actuel = int(core.CONFIG.get("veille_onglets") or 0)
-        return tuple(sorted(set(VEILLES) | {actuel}))
-
-    def _dire_veille(self, secondes):
-        secondes = int(secondes)
-        if secondes <= 0:
-            return core.t("reglages_jamais")
-        if secondes % 60 == 0:
-            return core.t("reglages_minutes", secondes // 60)
-        return core.t("reglages_secondes", secondes)
 
     def ouvrir_reglages(self):
         self.fermer_menu()
@@ -6550,6 +6676,8 @@ class Navigateur(Form):
                 milieu = y + h / 2.0
                 if item.get("cle") == "historique":
                     ui.horloge(g, couleur, 26, milieu, 7)
+                elif item.get("cle") == "relancer":
+                    ui.fleche_circulaire(g, couleur, 26, milieu, 7)
                 else:
                     ui.fleche_descendante(g, couleur, 26, milieu, 14)
                 ui.texte_tronque(g, item["texte"], self.police, couleur,
@@ -6658,8 +6786,11 @@ class Navigateur(Form):
             self.ouvrir_parametres()
         elif genre == "action":
             self.fermer_reglages()
-            if item.get("cle") == "historique":
+            cle = item.get("cle")
+            if cle == "historique":
                 self.ouvrir_historique()
+            elif cle == "relancer":
+                self.repartir_apres_le_moteur("relance demandee")
             else:
                 self.basculer_telechargements()
 
@@ -6898,57 +7029,108 @@ class Navigateur(Form):
         if not encore:
             self._arreter_anim()
 
-    def arreter_veille(self):
-        if self.minuteur_veille is None:
-            return
-        self.minuteur_veille.Stop()
-        self.minuteur_veille.Dispose()
-        self.minuteur_veille = None
+    def surveiller_le_pouls(self, envoyeur=None, args=None):
+        """Demande son pouls a la page regardee, et soigne le silence.
 
-    def demarrer_veille(self):
-        """Lance la surveillance des onglets d'arriere-plan."""
-        if self.minuteur_veille is not None:
-            return
-        if not core.CONFIG.get("veille_onglets"):
-            return
-        if not core.module_actif("ext_veille"):
-            return
-        self.minuteur_veille = Timer()
-        self.minuteur_veille.Interval = PERIODE_VEILLE
-        self.minuteur_veille.Tick += self.verifier_veille
-        self.minuteur_veille.Start()
+        Une question triviale, toutes les quatre secondes : son contenu ne
+        sert a rien, c'est qu'une reponse arrive qui compte. Ce qu'on
+        surveille est l'age de la question restee en l'air, jamais le temps
+        ecoule depuis le dernier mot, qui ne veut rien dire pour un onglet
+        qu'on n'interroge pas quand il est de cote.
 
-    def verifier_veille(self, envoyeur=None, args=None):
-        """Endort ce qui dort deja de fait.
-
-        Trois onglets sont epargnes : celui qu'on regarde, celui dont le
-        lecteur tourne, et celui qui joue du son. Le delai laisse un
-        aller-retour rapide entre deux onglets sans aucun cout.
+        Le remede depend alors de qui est bloque, et les deux cas demandent
+        l'inverse l'un de l'autre. Si les autres onglets repondent, le moteur
+        va bien et c'est ce rendu-la qui est pris : on refait sa vue, ce qui
+        change de processus. Si aucun ne repond, c'est le moteur entier, et
+        il ne faut surtout pas toucher aux vues : les fermer, c'est lui
+        parler, et il n'ecoute plus. On enregistre, et on repart.
         """
-        delai = core.CONFIG.get("veille_onglets") or 0
-        if delai <= 0 or not core.module_actif("ext_veille"):
+        onglet = self.actif
+        if onglet is None:
             return
-        maintenant = time.time()
-        for onglet in list(self.onglets):
-            if onglet is self.actif or onglet.endormi:
-                continue
-            age = maintenant - onglet.derniere_activite
-            if age < delai:
-                continue
-            try:
-                if onglet.incrustation.en_cours():
-                    continue
-            except Exception:
-                pass
-            if onglet.joue_du_son():
-                # Endormir une page qui joue coupe le son net. Le compteur
-                # repart : le silence revenu, l'onglet a de nouveau son delai
-                # entier avant de s'endormir.
-                onglet.derniere_activite = maintenant
-                continue
-            journal("veille : tentative sur %s (inactif depuis %.0f s)"
-                    % (str(onglet.url)[:60], age))
-            onglet.endormir()
+        if onglet._refection:
+            onglet.oublier_le_pouls()
+            return
+        try:
+            au_premier_plan = ((user32.GetForegroundWindow() or 0)
+                               == self.Handle.ToInt64())
+        except Exception:
+            return
+        if not au_premier_plan:
+            # Au second plan, Windows ralentit les minuteurs de la page :
+            # le silence n'y prouverait rien.
+            onglet.oublier_le_pouls()
+            return
+        onglet.prendre_le_pouls()
+        attente = onglet.sans_reponse()
+        if attente < SILENCE_VUE:
+            self._escalade = 0.0
+            return
+        if not self._escalade:
+            self._escalade = time.time()
+        # La page regardee ne repond plus. Avant de toucher a quoi que ce
+        # soit, on demande leur pouls aux autres onglets : refaire une vue
+        # ferme l'ancienne, et fermer une vue parle au processus navigateur.
+        # Si c'est lui qui est bloque, cet appel attendrait sans fin et
+        # emporterait la fenetre de Plume avec lui.
+        autres = [o for o in self.onglets
+                  if o is not onglet and not o._refection]
+        for autre in autres:
+            autre.prendre_le_pouls()
+        ailleurs = any(autre.repond_depuis_peu(SILENCE_VUE)
+                       for autre in autres)
+        if ailleurs:
+            # Le moteur repond ailleurs : ce rendu-la est bloque, lui seul,
+            # et le remplacer ne risque rien.
+            if onglet._remedes == 0:
+                onglet._remedes = 1
+                if not core.CONFIG.get("reprise_auto"):
+                    # Constate, et rien de plus. Refaire une vue recharge la
+                    # page : sur une fausse alerte, c'est une video ramenee
+                    # a son debut, et on en a assez casse comme cela.
+                    noter_incident("page sans reponse depuis %.0f s, le "
+                                   "moteur repond ailleurs : rien n'est "
+                                   "fait, la reprise automatique est "
+                                   "coupee (%s)"
+                                   % (attente, str(onglet.url)[:60]))
+                    return
+                noter_incident("page sans reponse depuis %.0f s, le "
+                               "moteur repond ailleurs : vue refaite (%s)"
+                               % (attente, str(onglet.url)[:60]))
+                onglet.refaire_la_vue()
+            elif onglet._remedes == 1 and attente >= SILENCE_MOTEUR:
+                # Une vue neuve, et toujours rien, alors que le moteur
+                # repond ailleurs : relancer Plume n'y changerait rien. On
+                # le note, faute de mieux, pour savoir que ce cas existe.
+                onglet._remedes = 2
+                noter_incident("vue neuve sans reponse depuis %.0f s, "
+                               "mais le moteur repond ailleurs (%s)"
+                               % (attente, str(onglet.url)[:60]))
+            return
+        if (attente < SILENCE_MOTEUR
+                or time.time() - self._escalade < DELAI_SECOND_AVIS):
+            # On laisse aux autres onglets le temps de repondre : ils
+            # viennent d'etre interroges, et un seul mot suffirait a dire
+            # que le moteur va bien. Les deux conditions comptent : la
+            # seconde garantit ce temps meme quand la premiere est deja
+            # largement depassee.
+            return
+        if not core.CONFIG.get("reprise_auto"):
+            # Constate, note, et rien de plus. Fermer le navigateur de
+            # quelqu'un sur une fausse alerte coute plus cher que le gel
+            # lui-meme : « Relancer Plume » attend dans le panneau de la
+            # roue, et c'est lui qui decide.
+            if onglet._remedes < 3:
+                onglet._remedes = 3
+                noter_incident("aucun onglet ne repond, question en l'air "
+                               "depuis %.0f s : rien n'est fait, la reprise "
+                               "automatique est coupee (%s)"
+                               % (attente, str(onglet.url)[:60]))
+            return
+        noter_incident("aucun onglet ne repond, question en l'air depuis "
+                       "%.0f s : Plume enregistre et repart (%s)"
+                       % (attente, str(onglet.url)[:60]))
+        self.repartir_apres_le_moteur("moteur muet")
 
     def plein_ecran_page(self, onglet, demande):
         """Met la fenetre en plein ecran pour la page, ou la remet comme avant.
@@ -7058,10 +7240,8 @@ class Navigateur(Form):
                 # commence a ne plus etre regarde.
                 o.derniere_activite = time.time()
         absence = time.time() - onglet.derniere_activite
-        onglet.reveiller()
         # Revenir sur une video laissee longtemps : on verifie qu'elle peut
-        # encore jouer. Le reveil ne le fait que s'il a lui-meme endormi la
-        # page ; ici, peu importe la raison de l'absence.
+        # encore jouer, la machine ayant pu dormir entre-temps.
         if absence >= ABSENCE_SUSPECTE and core.est_video(onglet.url or ""):
             self.verifier_lecteur(onglet)
         # Une mesure prise sous une autre taille de fenetre ferait apparaitre
@@ -7506,7 +7686,7 @@ class Navigateur(Form):
         def examiner(envoyeur=None, args=None):
             minuteur.Stop()
             minuteur.Dispose()
-            if onglet not in self.onglets or onglet.endormi:
+            if onglet not in self.onglets:
                 return
             try:
                 noyau = onglet.vue.CoreWebView2
@@ -7527,7 +7707,7 @@ class Navigateur(Form):
                 muette.Stop()
                 muette.Dispose()
                 if not reponse and onglet in self.onglets:
-                    journal("lecteur muet apres la veille : %s"
+                    journal("lecteur muet apres une longue absence : %s"
                             % str(onglet.url)[:70])
                     self.recharger_onglet(onglet)
 
@@ -7542,13 +7722,13 @@ class Navigateur(Form):
                     return
                 if not casse:
                     return
-                journal("lecteur casse apres la veille : %s"
+                journal("lecteur casse apres une longue absence : %s"
                         % str(onglet.url)[:70])
                 try:
                     self.Invoke(Action(
                         lambda: self.recharger_onglet(onglet)))
                 except Exception as e:
-                    journal("rechargement apres veille : %r" % (e,))
+                    journal("rechargement apres absence : %r" % (e,))
 
             try:
                 tache.ContinueWith(Action[Task](repondre))
@@ -7561,7 +7741,7 @@ class Navigateur(Form):
     def recharger(self):
         """Recharge la page active, pour de bon.
 
-        `Reload` rejoue le meme document. Apres une longue veille, un lecteur
+        `Reload` rejoue le meme document. Apres une longue absence, un lecteur
         video casse le restait donc, et le bouton n'y changeait rien : il
         fallait rouvrir l'adresse dans un onglet neuf. On renavigue vers
         l'adresse, ce qui revient au meme sans changer d'onglet.
@@ -7569,7 +7749,6 @@ class Navigateur(Form):
         onglet = self.actif
         if onglet is None:
             return
-        onglet.reveiller()      # recharger un onglet gele ne ferait rien
         try:
             noyau = onglet.vue.CoreWebView2
             if noyau is None:
@@ -7719,6 +7898,21 @@ class Navigateur(Form):
             else:
                 self.ouvrir_groupe_travail(nom)
             return
+        if genre == "maj" and message.get("action") == "pub_quand_meme":
+            # Choix explicite : on ouvre la publicite refusee a l'instant,
+            # et cet onglet-la n'est plus filtre.
+            adresse = str(getattr(self, "_pub_refusee", "") or "")
+            self._pub_refusee = ""
+            if not adresse.startswith(("http://", "https://")):
+                return
+            journal("publicite ouverte a la demande : %s" % adresse[:80])
+            onglet_pub = self.nouvel_onglet(adresse, naviguer=False)
+            onglet_pub.pub_autorisee = True
+            try:
+                onglet_pub.vue.Source = Uri(adresse)
+            except Exception as e:
+                journal("publicite demandee : %r" % (e,))
+            return
         if genre == "maj" and message.get("action") == "relancer":
             # Le moteur a change sous Plume : on repart dessus.
             self.repartir_apres_le_moteur()
@@ -7756,7 +7950,14 @@ class Navigateur(Form):
             if message.get("action") == "fermer":
                 self.fermer(onglet)
                 return
-            journal("page frauduleuse : %s" % str(message.get("url"))[:80])
+            adresse = str(message.get("url") or "")
+            if not adresse.startswith(("http://", "https://")):
+                # Une page de Plume, ou un fichier local : l'ecran d'alerte
+                # n'a pas de sens, et c'est la page des nouveautes qui en
+                # faisait les frais.
+                journal("arnaque ignoree, page locale : %s" % adresse[:80])
+                return
+            journal("page frauduleuse : %s" % adresse[:80])
             self.montrer_ecran_arnaque(onglet)
             return
         if genre == "page_vide":
@@ -8050,7 +8251,7 @@ class Navigateur(Form):
         except Exception as e:
             journal("moteur neuf : %r" % (e,))
 
-    def repartir_apres_le_moteur(self):
+    def repartir_apres_le_moteur(self, raison="moteur perdu"):
         """Enregistre la session et relance Plume : le moteur est mort.
 
         Sans cela, la fenetre reste ouverte sur des pages vides, et rien
@@ -8060,7 +8261,7 @@ class Navigateur(Form):
         if _REPART[0]:
             return                  # une seule fois, quoi qu'il arrive
         _REPART[0] = True
-        noter_incident("moteur perdu : Plume enregistre et repart")
+        noter_incident("%s : Plume enregistre et repart" % raison)
         try:
             self.enregistrer_session(force=True)
         except Exception as e:
@@ -8082,6 +8283,23 @@ class Navigateur(Form):
             except Exception:
                 pass
             return
+        # La fermeture ordinaire ferme les vues, et fermer une vue parle au
+        # processus navigateur : s'il est bloque, l'appel n'en revient pas et
+        # Plume resterait la, figee, pendant que la nouvelle attend son tour.
+        # Trois secondes, puis on s'arrete net : la session et l'historique
+        # sont deja ecrits, il n'y a plus rien a perdre.
+        try:
+            core.enregistrer_historique(self.historique)
+        except Exception as e:
+            noter_incident("historique avant redemarrage : %r" % (e,))
+
+        def arret_net():
+            noter_incident("fermeture sans retour : arret net")
+            os._exit(0)
+
+        secours = threading.Timer(3.0, arret_net)
+        secours.daemon = True
+        secours.start()
         try:
             self.Invoke(Action(lambda: Application.Exit()))
         except Exception:
@@ -8148,6 +8366,17 @@ class Navigateur(Form):
         except Exception as e:
             journal("bandeau de mise a jour : %s" % e)
             return False
+
+    def proposer_pub_refusee(self, adresse):
+        """Annonce une fenetre publicitaire refusee, et laisse le dernier mot.
+
+        Le bouton n'ouvre que l'adresse refusee a l'instant. L'onglet ainsi
+        ouvert n'est plus filtre : il n'a ete ouvert que pour cela, et une
+        page de publicite rebondit de redirection en redirection.
+        """
+        self._pub_refusee = str(adresse or "")
+        self.bandeau_maj(core.t("pub_refusee"), core.t("pub_ouvrir"),
+                         "pub_quand_meme")
 
     def annoncer_maj(self, texte):
         """Pose le bandeau si une page peut le porter. Faux sinon.
@@ -8781,10 +9010,13 @@ class Navigateur(Form):
             FENETRES.remove(self)
         self._fermer_apercu()
         self.cacher_suggestions()
-        if self.minuteur_veille is not None:
-            self.minuteur_veille.Stop()
-            self.minuteur_veille.Dispose()
-            self.minuteur_veille = None
+        # getattr : une fenetre fermee avant d'avoir fini de se construire
+        # n'a pas encore son minuteur de pouls.
+        if getattr(self, "minuteur_pouls", None) is not None:
+            # Sans quoi il continuerait de battre sur une fenetre detruite.
+            self.minuteur_pouls.Stop()
+            self.minuteur_pouls.Dispose()
+            self.minuteur_pouls = None
         self._finir_glisse_page()
         self._finir_chute()
         self._arreter_anim()
@@ -9393,7 +9625,16 @@ def main():
 
     # Demande venue du menu de la barre des taches : une fenetre de plus dans
     # l'instance en cours, plutot qu'un onglet.
-    if veut_privee:
+    #
+    # Sauf au retour d'un incident du moteur. L'ancienne Plume est en train de
+    # se fermer, et si elle respire encore, lui confier l'adresse serait la
+    # derniere chose qu'on ferait : elle se fermerait juste apres, nous serions
+    # deja partis, et il ne resterait plus de navigateur du tout. Le journal du
+    # 8 octobre montre ce cas, « ancienne Plume tenace », celui ou l'attente de
+    # quinze secondes n'a pas suffi. Deux fenetres valent mieux qu'aucune.
+    if attente:
+        noter_incident("relance : fenetre ouverte sans rien confier a l'ancienne")
+    elif veut_privee:
         if envoyer_au_canal("privee:"):
             return
     elif veut_fenetre:

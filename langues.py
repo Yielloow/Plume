@@ -94,10 +94,6 @@ TEXTES = {
         "reglages_qualite": "Qualité des lives Twitch",
         "reglages_intro": "Animation d'ouverture",
         "reglages_glissement": "Glissement des onglets",
-        "reglages_veille": "Veille des onglets",
-        "reglages_jamais": "Jamais",
-        "reglages_secondes": "%d s",
-        "reglages_minutes": "%d min",
         # --- echecs de lecture
         "lecture_echec_flux": "La lecture a échoué, avec et sans votre "
                               "session : YouTube a refusé le flux.",
@@ -157,10 +153,7 @@ TEXTES = {
         "param_ext_pub_aide": "Les publicités sont retirées de la page avant même que le lecteur ne les voie, et les requêtes publicitaires connues sont refusées.",
         "param_ext_twitch": "Lecteur Twitch de Plume",
         "param_ext_twitch_aide": "Les lives peuvent passer par mpv, sans coupure publicitaire, mais la carte graphique travaille davantage. Coupé, Twitch garde son lecteur.",
-        "param_ext_veille": "Onglets en veille",
-        "param_ext_veille_aide": "Les onglets que vous ne regardez pas rendent leur mémoire. Y revenir les retrouve intacts.",
         "param_qualite": "Qualité maximale des lives",
-        "param_delai": "Délai avant la veille",
         "param_actif": "Actif",
         "param_inactif": "Inactif",
         "param_defaut": "Faire de Plume le navigateur par défaut",
@@ -216,6 +209,8 @@ TEXTES = {
                                     "échoué. Vérifiez la connexion, puis "
                                     "réessayez (version actuelle : %s).",
         "maj_bouton": "Mettre à jour",
+        "pub_refusee": "Plume a refusé une fenêtre publicitaire. Certains sites la réclament avant de montrer ce qu'on est venu voir.",
+        "pub_ouvrir": "Ouvrir quand même",
         "maj_telechargement": "Téléchargement de la mise à jour... %d %%",
         "maj_bientot": "Mise à jour dans %d secondes.",
         "maj_annuler": "Annuler",
@@ -302,10 +297,6 @@ TEXTES = {
         "reglages_qualite": "Twitch live quality",
         "reglages_intro": "Opening animation",
         "reglages_glissement": "Tab sliding",
-        "reglages_veille": "Tab sleep",
-        "reglages_jamais": "Never",
-        "reglages_secondes": "%d s",
-        "reglages_minutes": "%d min",
         "lecture_echec_flux": "Playback failed, with and without your "
                               "session: YouTube refused the stream.",
         "lecture_echec_connexion": "Playback failed: YouTube requires you to "
@@ -361,10 +352,7 @@ TEXTES = {
         "param_ext_pub_aide": "Ads are removed from the page before the player even sees them, and known ad requests are refused.",
         "param_ext_twitch": "Plume's Twitch player",
         "param_ext_twitch_aide": "Lives can go through mpv, with no ad breaks, but the graphics card works harder. Switched off, Twitch keeps its own player.",
-        "param_ext_veille": "Sleeping tabs",
-        "param_ext_veille_aide": "Tabs you are not looking at give their memory back. Coming back finds them intact.",
         "param_qualite": "Maximum live quality",
-        "param_delai": "Delay before sleeping",
         "param_actif": "On",
         "param_inactif": "Off",
         "param_defaut": "Make Plume the default browser",
@@ -420,6 +408,8 @@ TEXTES = {
                                     "connection, then try again (current "
                                     "version: %s).",
         "maj_bouton": "Update",
+        "pub_refusee": "Plume refused an advertising window. Some sites ask for one before showing what you came for.",
+        "pub_ouvrir": "Open it anyway",
         "maj_telechargement": "Downloading the update... %d %%",
         "maj_bientot": "Updating in %d seconds.",
         "maj_annuler": "Cancel",

@@ -733,6 +733,44 @@ def fleche_descendante(graphiques, couleur, cx, cy, taille):
           cx + demi * 0.75, cy + demi * 0.8, 1.5)
 
 
+def fleche_circulaire(graphiques, couleur, cx, cy, rayon):
+    """Une fleche qui boucle : relancer Plume, en une icone.
+
+    Tracee plutot que tiree d'une police, comme les autres : GDI+ ne rend pas
+    les polices d'icones de Windows.
+    """
+    stylo = Pen(couleur, 1.4)
+    # L'arc laisse une ouverture a droite, ou se pose la pointe.
+    graphiques.DrawArc(stylo, float(cx - rayon), float(cy - rayon),
+                       float(rayon * 2), float(rayon * 2), 30.0, 290.0)
+    stylo.Dispose()
+    bout_x = cx + rayon * 0.87
+    bout_y = cy - rayon * 0.50
+    trait(graphiques, couleur, bout_x, bout_y,
+          bout_x - rayon * 0.60, bout_y - rayon * 0.30, 1.4)
+    trait(graphiques, couleur, bout_x, bout_y,
+          bout_x - rayon * 0.15, bout_y + rayon * 0.60, 1.4)
+
+
+def fleche_circulaire(graphiques, couleur, cx, cy, rayon):
+    """Une fleche qui boucle : relancer Plume, en une icone.
+
+    Tracee plutot que tiree d'une police, comme les autres : GDI+ ne rend pas
+    les polices d'icones de Windows.
+    """
+    stylo = Pen(couleur, 1.4)
+    # L'arc laisse une ouverture a droite, ou se pose la pointe.
+    graphiques.DrawArc(stylo, float(cx - rayon), float(cy - rayon),
+                       float(rayon * 2), float(rayon * 2), 30.0, 290.0)
+    stylo.Dispose()
+    bout_x = cx + rayon * 0.87
+    bout_y = cy - rayon * 0.50
+    trait(graphiques, couleur, bout_x, bout_y,
+          bout_x - rayon * 0.60, bout_y - rayon * 0.30, 1.4)
+    trait(graphiques, couleur, bout_x, bout_y,
+          bout_x - rayon * 0.15, bout_y + rayon * 0.60, 1.4)
+
+
 def roue_dentee(graphiques, couleur, cx, cy, rayon, dents=7):
     """Roue dentee, tracee plutot que tiree d'une police.
 
