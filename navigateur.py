@@ -1165,13 +1165,15 @@ MODELE_ACCUEIL = """<!doctype html>
  .tuile img { width:16px; height:16px; }
  .etoile { color:var(--pale); }
  .vide { color:var(--texte3); font-size:13px; }
+ /* Chaque carte garde sa hauteur : sans cela, celle qui deplie ses pages
+    etire ses voisines, qui se retrouvent hautes et vides. */
  .travaux { display:flex; flex-wrap:wrap; gap:12px; justify-content:center;
-            width:min(760px,88vw); }
+            align-items:flex-start; width:min(760px,88vw); }
  .titre-section { color:var(--texte3); font-size:12px; letter-spacing:1.4px;
                   text-transform:uppercase; margin:0 0 -14px; }
  .travail { position:relative; display:flex; align-items:center; gap:11px;
             flex-wrap:wrap;
-            padding:13px 42px 13px 16px; border-radius:12px;
+            padding:13px 68px 13px 16px; border-radius:12px;
             background:var(--carte); border:1px solid var(--bord2); cursor:pointer;
             min-width:168px; text-align:left; color:var(--texte2);
             font:inherit; font-size:14px; }
@@ -1179,13 +1181,37 @@ MODELE_ACCUEIL = """<!doctype html>
  .travail .pastille { width:10px; height:10px; border-radius:50%%;
                       flex:0 0 auto; }
  .travail .compte { color:var(--texte3); font-size:12px; }
- .travail .retirer { position:absolute; right:8px; top:50%%;
-                     transform:translateY(-50%%); width:24px; height:24px;
+ /* Ancrees en haut et non au milieu : la carte grandit quand on deplie
+    ses pages, et des boutons centres glissaient au milieu de la liste. */
+ .travail .retirer { position:absolute; right:8px; top:10px;
+                     width:24px; height:24px;
                      border:0; border-radius:7px; background:transparent;
                      color:var(--texte3); font-size:14px; line-height:1;
                      cursor:pointer; }
  .travail .retirer:hover { background:var(--survol2); color:var(--texte); }
  .travail .pastille { cursor:pointer; }
+ .travail .reglage { position:absolute; right:34px; top:10px;
+                     width:24px; height:24px;
+                     border:0; border-radius:7px; background:transparent;
+                     color:var(--texte3); font-size:13px; line-height:1;
+                     cursor:pointer; }
+ .travail .reglage:hover { background:var(--survol2); color:var(--texte); }
+ .travail .pages { display:none; width:100%%; flex-direction:column; gap:2px;
+                   margin-top:8px; padding-top:8px;
+                   border-top:1px solid var(--bord); }
+ .travail.pages-ouvertes .pages { display:flex; }
+ .pages .page { display:flex; align-items:center; gap:8px; padding:4px 4px;
+                border-radius:7px; font-size:13px; color:var(--texte2); }
+ .pages .page:hover { background:var(--survol2); }
+ .pages .page img { width:14px; height:14px; border-radius:4px; flex:none;
+                    background:var(--bord2); }
+ .pages .page .nom { flex:1; min-width:0; overflow:hidden;
+                     text-overflow:ellipsis; white-space:nowrap; }
+ .pages .page button { flex:none; width:22px; height:22px; border:0;
+                       border-radius:6px; background:transparent;
+                       color:var(--texte3); font-size:12px; line-height:1;
+                       cursor:pointer; }
+ .pages .page button:hover { background:var(--survol); color:var(--texte); }
  .travail .icones { display:flex; align-items:center; margin-left:2px; }
  .travail .icones img { width:16px; height:16px; border-radius:4px;
                         background:var(--bord2); margin-left:-5px;
@@ -1262,6 +1288,14 @@ MODELE_ACCUEIL = """<!doctype html>
  function retirerTravail(e, nom) {
    e.stopPropagation();
    poster({type:"travail", action:"supprimer", nom:nom});
+ }
+ function ouvrirPages(e, bouton) {
+   e.stopPropagation();
+   bouton.closest(".travail").classList.toggle("pages-ouvertes");
+ }
+ function retirerPage(e, nom, url) {
+   e.stopPropagation();
+   poster({type:"travail", action:"retirer_page", nom:nom, url:url});
  }
  function ouvrirPalette(e, pastille) {
    e.stopPropagation();
@@ -5260,6 +5294,46 @@ class Navigateur(Form):
         surplus = ('<span class="reste">+%d</span>' % reste) if reste > 1 else ""
         return '<span class="icones">%s%s</span>' % ("".join(morceaux), surplus)
 
+    def _icone_page(self, url):
+        """L'icone d'une page, pour la liste d'un groupe. Vide si on ne l'a pas.
+
+        Incluse en base64 et non liee, comme celles de la carte : une page
+        file:// n'a pas toujours le droit de lire d'autres fichiers locaux.
+        """
+        hote = core.hote(url or "")
+        if not hote:
+            return ""
+        chemin = core.DOSSIER_FAVICONS / (hote + ".png")
+        if not chemin.exists():
+            return ""
+        try:
+            donnees = base64.b64encode(chemin.read_bytes()).decode()
+        except Exception:
+            return ""
+        return '<img src="data:image/png;base64,%s" alt="">' % donnees
+
+    def _pages_du_groupe(self, groupe):
+        """La liste des pages d'un groupe, chacune avec sa croix."""
+        if not groupe["onglets"]:
+            return ('<div class="page"><span class="nom">%s</span></div>'
+                    % _echapper(core.t("accueil_groupe_vide")))
+        lignes = []
+        for entree in groupe["onglets"]:
+            lignes.append(
+                '<div class="page">%(icone)s<span class="nom" title="%(u)s">'
+                '%(titre)s</span>'
+                '<button title="%(t)s" '
+                'onclick="retirerPage(event,%(jsnom)s,%(jsurl)s)">'
+                '\u2715</button></div>'
+                % {"icone": self._icone_page(entree.get("url")),
+                   "u": _echapper(entree.get("url") or ""),
+                   "titre": _echapper(entree.get("titre")
+                                      or entree.get("url") or ""),
+                   "t": _echapper(core.t("accueil_retirer_page")),
+                   "jsnom": _echapper_js(groupe["nom"]),
+                   "jsurl": _echapper_js(entree.get("url") or "")})
+        return "".join(lignes)
+
     def _cartes_travail(self):
         """Groupes de travail, en cartes cliquables.
 
@@ -5308,8 +5382,13 @@ class Navigateur(Form):
                 '<span>%(nom)s</span>'
                 '%(icones)s'
                 '<span class="compte">%(n)d page%(s)s</span>'
+                '<button class="reglage" title="%(tr)s" '
+                'onclick="ouvrirPages(event,this)">\u2699</button>'
                 '<button class="retirer" title="%(ts)s" '
                 'onclick="retirerTravail(event, %(js)s)">\u2715</button>'
+                '<div class="pages" onclick="event.stopPropagation()">'
+                '%(pages)s'
+                '</div>'
                 '<div class="palette" onclick="event.stopPropagation()">'
                 '%(pastilles)s'
                 '<button class="valider" onclick="validerTeintes(event,%(js)s)"'
@@ -5322,7 +5401,9 @@ class Navigateur(Form):
                    "nom": _echapper(groupe["nom"]),
                    "n": nombre, "s": "s" if nombre > 1 else "",
                    "pastilles": pastilles,
+                   "pages": self._pages_du_groupe(groupe),
                    "tp": _echapper(core.t("accueil_changer_teinte")),
+                   "tr": _echapper(core.t("accueil_pages_groupe")),
                    "ts": _echapper(core.t("accueil_supprimer_groupe")),
                    "tv": _echapper(core.t("accueil_valider_teintes"))})
         return ('<p class="titre-section">%s</p>' % _echapper(
@@ -6331,6 +6412,28 @@ class Navigateur(Form):
         self.travail = [gr for gr in self.travail if gr["nom"] != nom]
         self.enregistrer_travail()
         self.signaler(core.t("groupe_supprime", nom), erreur=False)
+
+    def retirer_page_du_groupe(self, nom, url):
+        """Retire une page d'un groupe, depuis sa carte sur l'accueil.
+
+        Le clic droit sur un onglet le faisait deja, mais pour une page
+        ouverte seulement : une adresse rangee il y a trois semaines n'avait
+        aucun moyen d'en sortir.
+        """
+        cle = (url or "").rstrip("/")
+        if not nom or not cle:
+            return
+        self.recharger_travail()
+        groupe = core.groupe_travail(self.travail, nom)
+        if groupe is None:
+            return
+        restants = [o for o in groupe["onglets"]
+                    if (o.get("url") or "").rstrip("/") != cle]
+        if len(restants) == len(groupe["onglets"]):
+            return          # deja partie, rien a dire
+        groupe["onglets"] = restants
+        self.enregistrer_travail()
+        self.signaler(core.t("retire_de", nom), erreur=False)
 
     def ouvrir_groupe_travail(self, nom):
         """Rouvre toutes les pages d'un groupe, sans doubler celles deja la."""
@@ -7932,6 +8035,10 @@ class Navigateur(Form):
                 indices = message.get("indices")
                 if isinstance(indices, list):
                     self.definir_couleurs_travail(nom, indices)
+                return
+            if message.get("action") == "retirer_page":
+                self.retirer_page_du_groupe(nom,
+                                            str(message.get("url") or ""))
                 return
             if message.get("action") == "supprimer":
                 self.supprimer_groupe_travail(nom)

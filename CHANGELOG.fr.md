@@ -8,6 +8,12 @@ changement, avec ses raisons, est dans les messages de commit.
 
 ## 1.0.26 (2026-10-15)
 
+- **Une page se retire d'un groupe depuis sa carte.** La roue de la carte
+  déplie la liste des pages du groupe, chacune avec sa croix. Le clic droit
+  sur un onglet le faisait déjà, mais pour une page ouverte seulement : une
+  adresse rangée il y a trois semaines n'avait aucun moyen d'en sortir. Les
+  cartes gardent aussi leur hauteur quand l'une se déplie, au lieu d'étirer
+  ses voisines.
 - **F11 met la page en plein écran.** Les onglets, la barre d'adresse et les
   favoris s'effacent, la fenêtre couvre l'écran, et il ne reste que la page :
   de quoi jouer sans rien autour. F11 à nouveau remet tout en place, sur

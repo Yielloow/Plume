@@ -8,6 +8,11 @@ each change is in the commit messages.
 
 ## 1.0.26 (2026-10-15)
 
+- **A page can be removed from a group from its card.** The gear on the card
+  unfolds the list of the group's pages, each with its own cross.
+  Right-clicking a tab already did it, but only for an open page: an address
+  filed three weeks ago had no way out. Cards also keep their own height when
+  one unfolds, instead of stretching their neighbours.
 - **F11 puts the page in full screen.** Tabs, address bar and bookmarks go
   away, the window covers the screen, and only the page is left: enough to
   play a game with nothing around it. F11 again puts everything back, on the
