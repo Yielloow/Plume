@@ -6,6 +6,16 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.26 (2026-10-15)
+
+- **F11 puts the page in full screen.** Tabs, address bar and bookmarks go
+  away, the window covers the screen, and only the page is left: enough to
+  play a game with nothing around it. F11 again puts everything back, on the
+  screen and in the state the window was in. This full screen belongs to the
+  window, not to the page: switching tabs keeps it, and a video leaving its
+  own full screen does not undo it. If a video is holding full screen, F11
+  asks it to leave rather than pulling the screen from under it.
+
 ## 1.0.25 (2026-10-09)
 
 - **Tab sleeping is gone.** The engine's browser process died three times in

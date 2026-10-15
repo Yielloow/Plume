@@ -3155,6 +3155,11 @@ class Onglet(object):
             demande = bool(self.vue.CoreWebView2.ContainsFullScreenElement)
         except Exception:
             return
+        etat = self.nav._plein_ecran
+        if not demande and etat is not None and etat.get("par_touche"):
+            # La fenetre est en plein ecran parce qu'on l'a demande a la
+            # touche : ce n'est pas a la video d'en decider la sortie.
+            return
         try:
             self.nav.plein_ecran_page(self, demande)
         except Exception as e:
@@ -7132,12 +7137,16 @@ class Navigateur(Form):
                        % (attente, str(onglet.url)[:60]))
         self.repartir_apres_le_moteur("moteur muet")
 
-    def plein_ecran_page(self, onglet, demande):
+    def plein_ecran_page(self, onglet, demande, par_touche=False):
         """Met la fenetre en plein ecran pour la page, ou la remet comme avant.
 
         WebView2 n'agrandit l'element qu'a la taille de son cadre : c'est a la
         fenetre de couvrir l'ecran. Sans cela, le plein ecran du lecteur
         YouTube gardait les barres de Plume et les bords de la fenetre.
+
+        `par_touche` distingue F11 de la demande d'une page. Les deux posent
+        la meme fenetre, mais ne se defont pas pareil : la page sort quand sa
+        video sort, F11 ne sort qu'a F11.
         """
         if demande:
             if onglet is not self.actif or self._plein_ecran is not None:
@@ -7155,6 +7164,7 @@ class Navigateur(Form):
             # ecran.
             self._plein_ecran = {"onglet": onglet, "agrandie": agrandie,
                                  "normales": normales,
+                                 "par_touche": bool(par_touche),
                                  "ecran": Screen.FromHandle(self.Handle).Bounds}
             self.barre_onglets.Visible = False
             self.barre_nav.Visible = False
@@ -7200,6 +7210,29 @@ class Navigateur(Form):
             self.WindowState = FormWindowState.Maximized
         self.replacer()
 
+    def basculer_plein_ecran(self):
+        """F11 : la fenetre couvre l'ecran, ou revient comme elle etait.
+
+        Si c'est une video qui tient le plein ecran, on lui demande d'en
+        sortir plutot que de le lui retirer sous les pieds : elle remettra
+        ses commandes en place, et sa sortie ramenera la fenetre.
+        """
+        etat = self._plein_ecran
+        if etat is not None:
+            if etat.get("par_touche"):
+                self.plein_ecran_page(None, False)
+                return
+            try:
+                etat["onglet"].vue.CoreWebView2.ExecuteScriptAsync(
+                    "document.fullscreenElement && document.exitFullscreen()")
+            except Exception as e:
+                journal("sortie du plein ecran de la page : %r" % (e,))
+                self.plein_ecran_page(None, False)
+            return
+        if self.actif is None:
+            return
+        self.plein_ecran_page(self.actif, True, par_touche=True)
+
     def activer(self, onglet, glisser=False):
         # `glisser` n'est vrai que pour un changement d'onglet DEMANDE : clic
         # ou raccourci. Une restauration de session, une fermeture ou un
@@ -7208,7 +7241,11 @@ class Navigateur(Form):
         self._finir_glisse_page()
         self._finir_chute()
         if (self._plein_ecran is not None
+                and not self._plein_ecran.get("par_touche")
                 and self._plein_ecran["onglet"] is not onglet):
+            # Une video qui jouait en plein ecran : on quitte le sien en
+            # changeant d'onglet. Celui de F11 reste, comme dans les autres
+            # navigateurs : il appartient a la fenetre, pas a la page.
             try:
                 self._plein_ecran["onglet"].vue.CoreWebView2.ExecuteScriptAsync(
                     "document.fullscreenElement && document.exitFullscreen()")
@@ -7874,6 +7911,9 @@ class Navigateur(Form):
         elif args.Alt and args.KeyCode == Keys.Right:
             args.SuppressKeyPress = True
             self.avancer()
+        elif args.KeyCode == Keys.F11:
+            args.SuppressKeyPress = True
+            self.basculer_plein_ecran()
         elif args.KeyCode == Keys.F5:
             args.SuppressKeyPress = True
             self.recharger()

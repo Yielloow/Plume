@@ -6,6 +6,17 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
+## 1.0.26 (2026-10-15)
+
+- **F11 met la page en plein écran.** Les onglets, la barre d'adresse et les
+  favoris s'effacent, la fenêtre couvre l'écran, et il ne reste que la page :
+  de quoi jouer sans rien autour. F11 à nouveau remet tout en place, sur
+  l'écran et dans l'état où la fenêtre était. Celui-là appartient à la
+  fenêtre et non à la page : changer d'onglet le garde, et une vidéo qui
+  quitte son propre plein écran ne le défait pas. Si c'est une vidéo qui
+  tient le plein écran, F11 lui demande d'en sortir plutôt que de le lui
+  retirer sous les pieds.
+
 ## 1.0.25 (2026-10-09)
 
 - **La mise en veille des onglets est retirée.** Le processus navigateur du
