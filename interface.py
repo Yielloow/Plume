@@ -15,10 +15,12 @@ import clr
 
 clr.AddReference("System.Drawing")
 
-from System.Drawing import (Color, Pen, PointF, Rectangle, RectangleF,
-                            SolidBrush, StringAlignment, StringFormat,
-                            StringFormatFlags, StringTrimming)
+from System.Drawing import (Bitmap, Color, Graphics, Pen, PointF, Rectangle,
+                            RectangleF, SolidBrush, StringAlignment,
+                            StringFormat, StringFormatFlags, StringTrimming,
+                            TextureBrush)
 from System.Drawing.Drawing2D import GraphicsPath, SmoothingMode
+from System.Drawing.Imaging import PixelFormat
 from System.Drawing.Text import TextRenderingHint
 
 # ---- palette, dans l'esprit sombre de Firefox, avec notre violet ----------
@@ -190,6 +192,127 @@ def fond_groupe(indice):
     """La meme couleur, tres attenuee : un fond, pas une tache."""
     c = couleur_groupe(indice)
     return Color.FromArgb(64, c.R, c.G, c.B)
+
+
+# ---- motifs et forme des onglets ------------------------------------------
+# Un motif est une tuile et quelques traits : (taille, force, traits). Les
+# deux rendus, celui de la barre d'onglets en GDI+ et celui des pages en SVG,
+# partent de cette seule description : ils ne peuvent donc pas diverger.
+# Les traits depassent la tuile d'un pixel la ou ils la traversent, et les
+# diagonales redisent leurs voisines dans les coins : sans cela le lissage
+# s'arrete au bord et le raccord se voit comme une couture.
+# Blancs et presque transparents : un motif se devine, il ne se lit pas, et
+# le blanc tient sur toutes les couleurs qu'on peut choisir.
+MOTIFS = {
+    "aucun": None,
+    "points": ((14, 14), 0.17, (("point", 7, 7, 1.0),)),
+    "diagonales": ((10, 10), 0.08, (("ligne", -1, 11, 11, -1),
+                                    ("ligne", -1, 1, 1, -1),
+                                    ("ligne", 9, 11, 11, 9))),
+    "grille": ((20, 20), 0.065, (("ligne", -1, 0.5, 21, 0.5),
+                                 ("ligne", 0.5, -1, 0.5, 21))),
+    "chevrons": ((18, 10), 0.09, (("ligne", -1, 7.5, 9, 2.5),
+                                  ("ligne", 9, 2.5, 19, 7.5))),
+}
+NOMS_MOTIFS = ("aucun", "points", "diagonales", "grille", "chevrons")
+# Le rayon des coins d'un onglet, dans la barre et dans l'apercu des pages.
+FORMES = {"arrondis": (9, 7), "droits": (2, 2), "amples": (15, 12)}
+NOMS_FORMES = ("arrondis", "droits", "amples")
+MOTIF = "aucun"
+RAYON_ONGLET = 9
+_TUILE = [None, None, None]      # nom du motif, image, pinceau
+
+
+def definir_motif(nom):
+    """Retient le motif a dessiner. Un nom inconnu vaut « aucun »."""
+    global MOTIF
+    MOTIF = nom if nom in MOTIFS else "aucun"
+
+
+def definir_forme(nom):
+    """Retient la forme des onglets. Un nom inconnu vaut « arrondis »."""
+    global RAYON_ONGLET
+    RAYON_ONGLET = FORMES.get(nom, FORMES["arrondis"])[0]
+
+
+def rayon_css(nom):
+    """Le meme rayon, a l'echelle de l'apercu des parametres."""
+    return FORMES.get(nom, FORMES["arrondis"])[1]
+
+
+def _pinceau_du_motif():
+    """Le pinceau qui repete la tuile du motif courant, fabrique une fois."""
+    if _TUILE[0] == MOTIF and _TUILE[2] is not None:
+        return _TUILE[2]
+    for ancien in (_TUILE[2], _TUILE[1]):
+        if ancien is not None:
+            try:
+                ancien.Dispose()
+            except Exception:
+                pass
+    _TUILE[0], _TUILE[1], _TUILE[2] = MOTIF, None, None
+    description = MOTIFS.get(MOTIF)
+    if not description:
+        return None
+    (largeur, hauteur), force, traits = description
+    image = Bitmap(int(largeur), int(hauteur), PixelFormat.Format32bppArgb)
+    dessin = Graphics.FromImage(image)
+    dessin.SmoothingMode = SmoothingMode.AntiAlias
+    dessin.Clear(Color.FromArgb(0, 255, 255, 255))
+    couleur = Color.FromArgb(int(255 * force), 255, 255, 255)
+    for trait in traits:
+        if trait[0] == "point":
+            pinceau = SolidBrush(couleur)
+            dessin.FillEllipse(pinceau, float(trait[1] - trait[3]),
+                               float(trait[2] - trait[3]),
+                               float(trait[3] * 2), float(trait[3] * 2))
+            pinceau.Dispose()
+        else:
+            stylo = Pen(couleur, 1.0)
+            dessin.DrawLine(stylo, float(trait[1]), float(trait[2]),
+                            float(trait[3]), float(trait[4]))
+            stylo.Dispose()
+    dessin.Dispose()
+    _TUILE[1] = image
+    _TUILE[2] = TextureBrush(image)
+    return _TUILE[2]
+
+
+def peindre_motif(graphiques, largeur, hauteur):
+    """Couvre une surface du motif courant. Ne fait rien s'il n'y en a pas."""
+    try:
+        pinceau = _pinceau_du_motif()
+        if pinceau is not None:
+            graphiques.FillRectangle(pinceau, RectangleF(0.0, 0.0,
+                                                         float(largeur),
+                                                         float(hauteur)))
+    except Exception:
+        # Un motif est un ornement : s'il ne se dessine pas, la barre reste
+        # nue, ce qui vaut mieux qu'une barre qui ne se dessine plus.
+        _TUILE[0] = None
+
+
+def motif_css(nom=None):
+    """Le meme motif pour une page : une image de fond CSS, ou « none »."""
+    description = MOTIFS.get(MOTIF if nom is None else nom)
+    if not description:
+        return "none"
+    from urllib.parse import quote
+    (largeur, hauteur), force, traits = description
+    morceaux = []
+    for trait in traits:
+        if trait[0] == "point":
+            morceaux.append("<circle cx='%g' cy='%g' r='%g' fill='white' "
+                            "fill-opacity='%g'/>"
+                            % (trait[1], trait[2], trait[3], force))
+        else:
+            morceaux.append("<line x1='%g' y1='%g' x2='%g' y2='%g' "
+                            "stroke='white' stroke-opacity='%g' "
+                            "stroke-width='1'/>"
+                            % (trait[1], trait[2], trait[3], trait[4], force))
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' width='%g' height='%g'>"
+           "%s</svg>" % (largeur, hauteur, "".join(morceaux)))
+    return 'url("data:image/svg+xml,%s")' % quote(svg, safe="=:/' ")
 
 
 def chemin_arrondi(x, y, largeur, hauteur, rayon, coins="tous"):

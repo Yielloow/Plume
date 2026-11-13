@@ -6,6 +6,41 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
+## 1.0.27 (2026-11-12)
+
+- **La carte graphique se choisit.** Sur une machine à deux cartes, Windows
+  donnait à Plume la puce du processeur. Paramètres, Général : laisser Windows
+  choisir, hautes performances ou économie d'énergie. Le choix vaut pour
+  Plume, son moteur et son lecteur vidéo, et prend effet au prochain
+  lancement, qu'un bandeau propose aussitôt.
+- **Le dossier des téléchargements et celui du cache se choisissent.** Le
+  premier prend effet tout de suite. Pour le second, seul le cache bouge, ce
+  que le moteur peut retélécharger : le profil, mots de passe et session,
+  reste où il est.
+- **Des motifs, et une forme pour les onglets.** Points, diagonales, grille
+  ou chevrons, dessinés derrière les onglets et sur les pages de Plume ; et
+  des onglets arrondis, droits ou amples. L'aperçu des paramètres suit.
+- **Une page d'un groupe peut être écartée sans être perdue.** Un groupe est
+  une habitude, et une habitude n'a pas toujours besoin de toutes ses pages.
+  Le rond devant chaque page la met de côté : elle reste dans la liste, à sa
+  place, mais le groupe ne l'ouvre plus. Un clic la remet. Le compte de la
+  carte annonce ce qui s'ouvrira, pas ce qui est rangé.
+- **Une page d'un groupe s'ouvre toute seule.** Son titre, dans la liste,
+  l'ouvre sans entraîner les autres ; si elle est déjà ouverte, Plume y va
+  plutôt que d'en poser une seconde. La carte dépliée s'élargit, sinon les
+  titres étaient tronqués après trois mots.
+- **YouTube ne se fige plus sur son gros bouton de lecture.** Signalé à
+  l'usage : la vidéo se lançait, la page se figeait sous un voile gris, et
+  plus rien ne répondait. Plume met une page en sourdine et vide sa balise
+  vidéo quand son propre lecteur prend le relais, ce qui n'arrive que sur
+  Twitch. Mais l'appel se faisait sans condition au chargement de chaque
+  page : si le lecteur de YouTube avait déjà commencé à cet instant, ce qui
+  dépend de la machine et arrive à coup sûr sur une adresse qui démarre seule
+  comme une radio, Plume lui arrachait sa source. Mesure faite sur la page
+  signalée : la vidéo lisait à 27 secondes, et se retrouvait vidée, sourde au
+  clic. La mise en sourdine ne vaut plus que là où le lecteur de Plume prend
+  effectivement la main.
+
 ## 1.0.26 (2026-10-15)
 
 - **Une page se retire d'un groupe depuis sa carte.** La roue de la carte

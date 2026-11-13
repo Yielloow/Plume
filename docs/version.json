@@ -1,8 +1,8 @@
 {
-  "version": "1.0.26",
-  "url": "https://github.com/Yielloow/Plume/releases/download/v1.0.26/Plume-1.0.26-installeur.exe",
-  "sha256": "cb38a748a0bca36021acec6819d5ae0f3d0529854dc93dc58a50dd70e197164c",
+  "version": "1.0.27",
+  "url": "https://github.com/Yielloow/Plume/releases/download/v1.0.27/Plume-1.0.27-installeur.exe",
+  "sha256": "5a0f14dc8f5bde8867c9504eaca81490ad242eb214416a44152309cdbc2ee8d8",
   "taille_mo": 70,
-  "date": "2026-10-15",
+  "date": "2026-11-13",
   "notes": ""
 }

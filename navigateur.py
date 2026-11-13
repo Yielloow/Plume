@@ -94,7 +94,7 @@ from System.Windows.Forms import (                                 # noqa: E402
     Form, TextRenderer,
     FormBorderStyle, FormWindowState, Keys, MouseButtons, Padding, Panel,
     FormStartPosition, Screen, TextBox, Timer, ToolTip,
-    UnhandledExceptionMode)
+    UnhandledExceptionMode, DialogResult, FolderBrowserDialog)
 from Microsoft.Web.WebView2.Core import (                          # noqa: E402
     CoreWebView2BrowsingDataKinds, CoreWebView2Environment,
     CoreWebView2PermissionKind, CoreWebView2PermissionState,
@@ -128,9 +128,24 @@ PROFIL = os.environ["WEBVIEW2_USER_DATA_FOLDER"]
 # revenait a interdire tout reglage du moteur depuis l'exterieur, ce que des
 # utilisateurs font pour un usage portable.
 _ARGS_MOTEUR = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "").strip()
+# Le cache du moteur, ailleurs si on l'a demande : seul le cache bouge, ce
+# qu'il peut retelecharger. Un dossier introuvable ne bloque rien, le cache
+# retourne alors dans le profil.
+_DOSSIER_CACHE = core.dossier_cache_utilisable()
 os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = (
     (_ARGS_MOTEUR + " " if _ARGS_MOTEUR else "")
-    + "--disable-features=AudioServiceOutOfProcess")
+    + "--disable-features=AudioServiceOutOfProcess"
+    + (' --disk-cache-dir="%s"' % _DOSSIER_CACHE if _DOSSIER_CACHE else ""))
+# La carte graphique voulue, redite avant que le moteur ne demarre : la
+# preference de Windows s'attache au chemin du programme, et le moteur change
+# de dossier a chaque mise a jour.
+try:
+    if core.CONFIG.get("gpu") in ("performance", "economie"):
+        core.appliquer_gpu()
+except Exception:
+    pass
+ui.definir_motif(core.CONFIG.get("motif"))
+ui.definir_forme(core.CONFIG.get("forme_onglets"))
 PORT = 47821                       # canal local pour recevoir de nouveaux onglets
 # Page d'accueil locale : un fichier du profil, jamais une page distante.
 # C'est aussi ce qui permet a la barre d'adresse de garder le focus a
@@ -433,6 +448,7 @@ def _palette_des_pages():
     et ses pages de l'autre.
     """
     return {"accent": ui.accent_courant(),
+            "motif": ui.motif_css(),
             "pale": ui.ecrire_couleur(ui.ACCENT_PALE),
             "fond": ui.ecrire_couleur(ui.FOND_PAGE),
             "carte": ui.ecrire_couleur(ui.FOND_ONGLETS),
@@ -753,6 +769,21 @@ MODELE_PARAMETRES = """<!doctype html>
             font-size:19px; font-weight:600; color:var(--texte); }
  .ap-page i { color:var(--pale); font-style:normal; }
  .themes { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+ /* L'apercu suit le motif et la forme choisis, comme il suit la couleur. */
+ .ap-onglets { background-image:%(motif_css)s; }
+ .ap-onglet { border-radius:%(rayon)spx %(rayon)spx 0 0; }
+ .motifs { display:flex; flex-wrap:wrap; gap:8px; margin-top:14px; }
+ .motif { width:108px; height:58px; border-radius:9px; cursor:pointer;
+          border:1px solid var(--bord); color:var(--texte2); font:inherit;
+          font-size:12px; display:flex; align-items:flex-end;
+          padding:6px 9px; text-align:left;
+          background-color:color-mix(in srgb, var(--accent) 5%%, #171816); }
+ .motif:hover { color:var(--texte); }
+ .motif.prise { border-color:var(--accent); color:var(--texte);
+                box-shadow:0 0 0 1px var(--accent); }
+%(motifs_css)s
+ .chemin { font-family:Consolas,monospace; font-size:12px;
+           word-break:break-all; }
  .theme { display:flex; align-items:center; gap:8px; cursor:pointer;
           background:var(--carte2); color:var(--texte2); font:inherit;
           font-size:13px; border:1px solid var(--bord); border-radius:99px;
@@ -903,6 +934,35 @@ MODELE_PARAMETRES = """<!doctype html>
      <button class="bouton" onclick="dire('oublier_maj', true)">%(oubli_bouton)s</button>
     </div>
    </div>
+   <h3>%(t_fichiers)s</h3>
+   <div class="carte">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(dl_nom)s</div>
+      <div class="aide chemin">%(dl_chemin)s</div></div>
+     <div class="pilules">
+      <button class="bouton" onclick="dire('dossier_telechargements','choisir')">%(choisir)s</button>
+      %(dl_defaut)s
+     </div>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(cache_nom)s</div>
+      <div class="aide">%(cache_aide)s</div>
+      <div class="aide chemin">%(cache_chemin)s</div></div>
+     <div class="pilules">
+      <button class="bouton" onclick="dire('dossier_cache','choisir')">%(choisir)s</button>
+      %(cache_defaut)s
+     </div>
+    </div>
+   </div>
+   <h3>%(t_gpu)s</h3>
+   <div class="carte">
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(gpu_nom)s</div>
+      <div class="aide">%(gpu_aide)s</div>
+      <div class="aide">%(gpu_cartes)s</div></div>
+     <select onchange="dire('gpu', this.value)">%(gpus)s</select>
+    </div>
+   </div>
   </section>
 
   <section id="apparence">
@@ -934,6 +994,19 @@ MODELE_PARAMETRES = """<!doctype html>
              maxlength="7" spellcheck="false"
              onchange="parTexte(this.value)">
      </div>
+    </div>
+   </div>
+   <h3>%(t_motif)s</h3>
+   <div class="carte">
+    <div class="ligne" style="display:block">
+     <div class="nom">%(motif_nom)s</div>
+     <div class="aide" style="margin-top:4px">%(motif_aide)s</div>
+     <div class="motifs">%(motifs)s</div>
+    </div>
+    <div class="ligne">
+     <div class="texte"><div class="nom">%(forme_nom)s</div>
+      <div class="aide">%(forme_aide)s</div></div>
+     <div class="pilules">%(formes)s</div>
     </div>
    </div>
   </section>
@@ -1147,7 +1220,8 @@ MODELE_ACCUEIL = """<!doctype html>
    --texte:%(texte)s; --texte2:%(texte2)s; --texte3:%(texte3)s; }
  body { margin:0; min-height:100vh; display:flex; flex-direction:column;
         align-items:center; justify-content:center; gap:26px;
-        background:var(--fond); color:var(--texte);
+        background:var(--fond); background-image:%(motif)s;
+        color:var(--texte);
         font:15px "Segoe UI",system-ui,sans-serif; }
  h1 { margin:0; font-size:44px; font-weight:600; letter-spacing:-0.5px; }
  h1 span { color:var(--pale); }
@@ -1200,13 +1274,26 @@ MODELE_ACCUEIL = """<!doctype html>
                    margin-top:8px; padding-top:8px;
                    border-top:1px solid var(--bord); }
  .travail.pages-ouvertes .pages { display:flex; }
+ /* Depliee, la carte s'elargit : a sa largeur de repos, les titres de pages
+    etaient tronques apres trois mots et la liste ne servait a rien. */
+ .travail.pages-ouvertes { min-width:min(380px,100%%); }
  .pages .page { display:flex; align-items:center; gap:8px; padding:4px 4px;
                 border-radius:7px; font-size:13px; color:var(--texte2); }
  .pages .page:hover { background:var(--survol2); }
  .pages .page img { width:14px; height:14px; border-radius:4px; flex:none;
                     background:var(--bord2); }
  .pages .page .nom { flex:1; min-width:0; overflow:hidden;
-                     text-overflow:ellipsis; white-space:nowrap; }
+                     text-overflow:ellipsis; white-space:nowrap;
+                     background:none; border:0; padding:0; margin:0;
+                     font:inherit; color:inherit; text-align:left;
+                     cursor:pointer; }
+ .pages .page .nom:hover { color:var(--texte); text-decoration:underline; }
+ /* Ecartee : elle reste dans la liste, a sa place, mais le groupe ne
+    l'ouvre pas. Le texte barre le dit sans qu'il faille lire une bulle. */
+ .pages .page.ecartee .nom { text-decoration:line-through; opacity:.55; }
+ .pages .page.ecartee img { opacity:.4; }
+ .pages .page .bascule { color:var(--accent); }
+ .pages .page.ecartee .bascule { color:var(--texte3); }
  .pages .page button { flex:none; width:22px; height:22px; border:0;
                        border-radius:6px; background:transparent;
                        color:var(--texte3); font-size:12px; line-height:1;
@@ -1296,6 +1383,14 @@ MODELE_ACCUEIL = """<!doctype html>
  function retirerPage(e, nom, url) {
    e.stopPropagation();
    poster({type:"travail", action:"retirer_page", nom:nom, url:url});
+ }
+ function basculerPage(e, nom, url) {
+   e.stopPropagation();
+   poster({type:"travail", action:"basculer_page", nom:nom, url:url});
+ }
+ function ouvrirPageSeule(e, url) {
+   e.stopPropagation();
+   poster({type:"travail", action:"ouvrir_page", url:url});
  }
  function ouvrirPalette(e, pastille) {
    e.stopPropagation();
@@ -2519,7 +2614,15 @@ JS = r"""
   addEventListener("scroll", battement, true);
   addEventListener("resize", battement);
   addEventListener("DOMContentLoaded", function () {
-    museler();
+    // Museler met la page en sourdine ET vide sa balise video : cela n'a de
+    // sens que la ou le lecteur de Plume prend le relais, c'est-a-dire sur
+    // Twitch. Appele sans condition, il arrachait sa source au lecteur de
+    // YouTube quand celui-ci avait deja commence, ce qui arrive sur une
+    // machine rapide ou sur une adresse qui demarre seule, « start_radio ».
+    // La page restait alors sur son gros bouton de lecture, sourde au clic.
+    // Mesure faite sur la page signalee : networkState et readyState
+    // retombes a zero, la video etant a 27 secondes l'instant d'avant.
+    if (estPageVideo(location.href)) museler();
     masquerPubs();
     envoyer("url", { url: location.href, titre: document.title || "",
                      lecteur: "plume", sombre: fond_sombre() });
@@ -2886,6 +2989,7 @@ class Onglet(object):
             except Exception as e:
                 journal("surveillance du moteur : %r" % (e,))
             self.appliquer_confidentialite(noyau)
+            poser_dossier_telechargements(noyau)
             # Un filtre par motif plutot qu'un filtre « * » : seules les
             # requetes visees declenchent l'evenement, le reste du trafic n'est
             # pas ralenti.
@@ -4033,6 +4137,10 @@ class Navigateur(Form):
     def peindre_onglets(self, envoyeur, args):
         g = args.Graphics
         ui.preparer(g)
+        # Le motif d'abord, sous tout le reste. Il ne couvre que cette barre :
+        # l'onglet actif et la barre d'adresse restent unis, et c'est ce
+        # contraste qui continue de dire lequel on regarde.
+        ui.peindre_motif(g, self.barre_onglets.Width, H_ONGLETS)
 
         # Cette fenetre est visee par un onglet en cours de deplacement :
         # on le montre, sinon rien ne dit ou il va atterrir.
@@ -4060,7 +4168,7 @@ class Navigateur(Form):
                 self._bulle_onglet = None
         if bulle is not None:
             ui.remplir_arrondi(g, ui.FOND_NAV, bulle[0], 6, bulle[1],
-                               H_ONGLETS - 6, 9, "haut")
+                               H_ONGLETS - 6, ui.RAYON_ONGLET, "haut")
             if bulle[1] > 86:
                 ui.etincelle(g, ui.ACCENT_PALE, bulle[0] + 17, 23, 6.5)
 
@@ -4071,7 +4179,7 @@ class Navigateur(Form):
                 # fantome : la place se referme, rien de cliquable dedans
                 if largeur_vue > 6:
                     ui.remplir_arrondi(g, ui.FOND_ONGLETS, x, 6, largeur_vue,
-                                       H_ONGLETS - 6, 9, "haut")
+                                       H_ONGLETS - 6, ui.RAYON_ONGLET, "haut")
                     part = element["echelle"]
                     ui.etincelle(g, ui.avec_alpha(ui.ACCENT_PALE, 190 * part),
                                  x + largeur_vue / 2.0, 22, 11.0 * part)
@@ -4082,7 +4190,7 @@ class Navigateur(Form):
             if onglet is tire:
                 # l'onglet suit le curseur : sa place reste marquee, en creux
                 ui.remplir_arrondi(g, ui.FOND_ONGLETS, x, 6, largeur_vue,
-                                   H_ONGLETS - 6, 9, "haut")
+                                   H_ONGLETS - 6, ui.RAYON_ONGLET, "haut")
                 continue
             if largeur_vue < 12:
                 # trop etroit pour montrer quoi que ce soit sans bavure
@@ -4094,10 +4202,10 @@ class Navigateur(Form):
                 # contour, l'ensemble se lisait comme une petite fenetre
                 # posee sur une grande.
                 ui.remplir_arrondi(g, ui.FOND_NAV, x, 6, largeur_vue,
-                                   H_ONGLETS - 6, 9, "haut")
+                                   H_ONGLETS - 6, ui.RAYON_ONGLET, "haut")
             elif onglet.survole:
                 ui.remplir_arrondi(g, ui.ONGLET_SURVOL, x, 6, largeur_vue,
-                                   H_ONGLETS - 6, 9, "haut")
+                                   H_ONGLETS - 6, ui.RAYON_ONGLET, "haut")
 
             # La marque de Plume designe l'onglet regarde, l'icone du site
             # restant a sa droite : c'est elle qu'on cherche des yeux dans une
@@ -5312,23 +5420,51 @@ class Navigateur(Form):
             return ""
         return '<img src="data:image/png;base64,%s" alt="">' % donnees
 
+    def _carte_a_rouvrir(self, nom):
+        """Vrai si la liste de ce groupe doit renaitre depliee.
+
+        Ecarter ou retirer une page reecrit l'accueil et le recharge : sans
+        cette marque, la liste se refermerait a chaque clic. Elle vit ici et
+        non dans l'adresse de la page, parce qu'une ancre changerait
+        l'adresse de l'onglet, que tout le reste compare a celle de
+        l'accueil. Quelques secondes suffisent : le temps du rechargement.
+        """
+        marque = getattr(self, "_carte_ouverte", None)
+        return bool(marque and marque[0] == nom
+                    and time.time() - marque[1] < 4.0)
+
     def _pages_du_groupe(self, groupe):
-        """La liste des pages d'un groupe, chacune avec sa croix."""
+        """La liste des pages d'un groupe : ouvrir, ecarter, retirer.
+
+        Trois gestes par ligne, et ils ne font pas la meme chose. Le titre
+        ouvre cette page seule. Le rond l'ecarte du groupe sans la perdre :
+        elle reste la, mais le groupe ne l'ouvrira pas. La croix l'enleve
+        pour de bon.
+        """
         if not groupe["onglets"]:
             return ('<div class="page"><span class="nom">%s</span></div>'
                     % _echapper(core.t("accueil_groupe_vide")))
         lignes = []
         for entree in groupe["onglets"]:
+            actif = bool(entree.get("actif", True))
             lignes.append(
-                '<div class="page">%(icone)s<span class="nom" title="%(u)s">'
-                '%(titre)s</span>'
+                '<div class="page%(ecartee)s">%(icone)s'
+                '<button class="nom" title="%(to)s" '
+                'onclick="ouvrirPageSeule(event,%(jsurl)s)">%(titre)s</button>'
+                '<button class="bascule" title="%(tb)s" '
+                'onclick="basculerPage(event,%(jsnom)s,%(jsurl)s)">'
+                '%(rond)s</button>'
                 '<button title="%(t)s" '
                 'onclick="retirerPage(event,%(jsnom)s,%(jsurl)s)">'
                 '\u2715</button></div>'
-                % {"icone": self._icone_page(entree.get("url")),
-                   "u": _echapper(entree.get("url") or ""),
+                % {"ecartee": "" if actif else " ecartee",
+                   "icone": self._icone_page(entree.get("url")),
+                   "rond": "\u25cf" if actif else "\u25cb",
                    "titre": _echapper(entree.get("titre")
                                       or entree.get("url") or ""),
+                   "to": _echapper(core.t("accueil_page_seule")),
+                   "tb": _echapper(core.t("accueil_page_gardee" if actif
+                                          else "accueil_page_ecartee")),
                    "t": _echapper(core.t("accueil_retirer_page")),
                    "jsnom": _echapper_js(groupe["nom"]),
                    "jsurl": _echapper_js(entree.get("url") or "")})
@@ -5371,9 +5507,12 @@ class Navigateur(Form):
                    "actif": " prise" if i in choisies else "",
                    "t": _echapper(core.t("accueil_teinte"))}
                 for i in range(core.NB_COULEURS_GROUPE))
-            nombre = len(groupe["onglets"])
+            # Le compte annonce ce qui s'ouvrira, donc les pages gardees :
+            # une carte qui promet cinq pages et en ouvre trois ment.
+            nombre = sum(1 for o in groupe["onglets"]
+                         if o.get("actif", True))
             morceaux.append(
-                '<div class="travail" role="button" tabindex="0" '
+                '<div class="travail%(ouverte)s" role="button" tabindex="0" '
                 'style="background:%(fond)s;border-color:%(bord)s55" '
                 'onclick="ouvrirTravail(%(js)s)">'
                 '<span class="pastille" style="background:%(c)s;'
@@ -5402,6 +5541,9 @@ class Navigateur(Form):
                    "n": nombre, "s": "s" if nombre > 1 else "",
                    "pastilles": pastilles,
                    "pages": self._pages_du_groupe(groupe),
+                   "ouverte": (" pages-ouvertes"
+                               if self._carte_a_rouvrir(groupe["nom"])
+                               else ""),
                    "tp": _echapper(core.t("accueil_changer_teinte")),
                    "tr": _echapper(core.t("accueil_pages_groupe")),
                    "ts": _echapper(core.t("accueil_supprimer_groupe")),
@@ -5585,6 +5727,34 @@ class Navigateur(Form):
             core.definir_reglage("theme", valeur)
             appliquer_theme_partout()
             return
+        if cle in ("motif", "forme_onglets"):
+            nom = str(valeur or "")
+            if nom not in (ui.MOTIFS if cle == "motif" else ui.FORMES):
+                return
+            core.definir_reglage(cle, nom)
+            ui.definir_motif(core.CONFIG.get("motif"))
+            ui.definir_forme(core.CONFIG.get("forme_onglets"))
+            rafraichir_pages_locales(barres=True)
+            return
+        if cle in ("dossier_telechargements", "dossier_cache"):
+            self.regler_dossier(cle, str(valeur or ""))
+            return
+        if cle == "gpu":
+            choix_gpu = str(valeur or "auto")
+            if choix_gpu not in ("auto", "performance", "economie"):
+                return
+            if core.definir_reglage("gpu", choix_gpu):
+                try:
+                    core.appliquer_gpu(choix_gpu)
+                except Exception as e:
+                    journal("carte graphique : %r" % (e,))
+                # La carte se choisit au demarrage du moteur : le dire, et
+                # offrir de repartir plutot que de laisser croire que c'est
+                # fait.
+                self.bandeau_maj(core.t("param_au_prochain_lancement"),
+                                 core.t("moteur_relancer"),
+                                 "relancer_reglage")
+            return
         if cle not in ("moteur_recherche", "qualite_max",
                        "intro", "glissement_onglets", "ext_sans_pub",
                        "ext_lecteur_twitch",
@@ -5609,6 +5779,51 @@ class Navigateur(Form):
                 for onglet in list(fenetre.onglets):
                     if "youtube." in (onglet.url or ""):
                         fenetre.recharger_onglet(onglet)
+
+    def regler_dossier(self, cle, action):
+        """Choisit le dossier des telechargements ou celui du cache.
+
+        « choisir » ouvre le choix de dossier de Windows, « defaut » revient
+        a l'origine. Le premier prend effet tout de suite ; le second
+        seulement au prochain demarrage du moteur, qui lit son cache une
+        fois pour toutes.
+        """
+        actuel = str(core.CONFIG.get(cle) or "")
+        if action == "defaut":
+            nouveau = ""
+        elif action == "choisir":
+            dialogue = FolderBrowserDialog()
+            try:
+                dialogue.Description = core.t(
+                    "param_dl" if cle == "dossier_telechargements"
+                    else "param_cache")
+                depart = actuel or (core.dossier_telechargements_windows()
+                                    if cle == "dossier_telechargements"
+                                    else "")
+                if depart and os.path.isdir(depart):
+                    dialogue.SelectedPath = depart
+                if dialogue.ShowDialog(self) != DialogResult.OK:
+                    return
+                nouveau = str(dialogue.SelectedPath or "")
+            finally:
+                dialogue.Dispose()
+            if not nouveau or not os.path.isdir(nouveau):
+                return
+        else:
+            return
+        if not core.definir_reglage(cle, nouveau):
+            return
+        if cle == "dossier_telechargements":
+            try:
+                if self.actif is not None:
+                    poser_dossier_telechargements(
+                        self.actif.vue.CoreWebView2, force=True)
+            except Exception as e:
+                journal("dossier de telechargement : %r" % (e,))
+        rafraichir_pages_locales()
+        if cle == "dossier_cache":
+            self.bandeau_maj(core.t("param_au_prochain_lancement"),
+                             core.t("moteur_relancer"), "relancer_reglage")
 
     def appliquer_langue(self):
         """Rejoue l'interface dans la nouvelle langue, sans redemarrer.
@@ -5750,6 +5965,36 @@ class Navigateur(Form):
         cfg = core.CONFIG
         langue = core.langue()
         accent = ui.accent_courant()
+
+        def bouton_defaut(cle, actif):
+            # Le retour au dossier d'origine n'a de sens que si on l'a quitte.
+            if not actif:
+                return ""
+            return ('<button class="bouton" onclick="dire(\'%s\',\'defaut\')">'
+                    '%s</button>' % (cle, _echapper(core.t("param_par_defaut"))))
+
+        motif_pris = cfg.get("motif") if cfg.get("motif") in ui.MOTIFS \
+            else "aucun"
+        forme_prise = cfg.get("forme_onglets") \
+            if cfg.get("forme_onglets") in ui.FORMES else "arrondis"
+        motifs = "".join(
+            '<button class="motif m-%s%s" onclick="dire(\'motif\',\'%s\')">'
+            '%s</button>'
+            % (nom, " prise" if nom == motif_pris else "", nom,
+               _echapper(core.t("motif_" + nom)))
+            for nom in ui.NOMS_MOTIFS)
+        motifs_css = "\n".join(
+            " .motif.m-%s { background-image:%s; }" % (nom, ui.motif_css(nom))
+            for nom in ui.NOMS_MOTIFS)
+        formes = "".join(
+            '<button class="pilule%s" onclick="dire(\'forme_onglets\',\'%s\')">'
+            '%s</button>'
+            % (" prise" if nom == forme_prise else "", nom,
+               _echapper(core.t("forme_" + nom)))
+            for nom in ui.NOMS_FORMES)
+        dossier_dl = str(cfg.get("dossier_telechargements") or "")
+        dossier_cache = str(cfg.get("dossier_cache") or "")
+        cartes = core.cartes_graphiques()
         # Chaque theme porte son nom : une pastille seule ne disait pas ce
         # qu'elle allait changer.
         teintes = "".join(
@@ -5903,6 +6148,40 @@ class Navigateur(Form):
             "infos_fait": json.dumps(core.t("param_infos_fait")),
             "profil": _echapper(PROFIL),
             "site": "https://yielloow.github.io/Plume/",
+            "t_fichiers": _echapper(core.t("titre_fichiers")),
+            "choisir": _echapper(core.t("param_choisir")),
+            "dl_nom": _echapper(core.t("param_dl")),
+            "dl_chemin": _echapper(
+                dossier_dl or core.dossier_telechargements_windows()),
+            "dl_defaut": bouton_defaut("dossier_telechargements",
+                                       bool(dossier_dl)),
+            "cache_nom": _echapper(core.t("param_cache")),
+            "cache_aide": _echapper(core.t("param_cache_aide")),
+            "cache_chemin": _echapper(
+                dossier_cache or core.t("param_cache_profil")),
+            "cache_defaut": bouton_defaut("dossier_cache",
+                                          bool(dossier_cache)),
+            "t_gpu": _echapper(core.t("titre_gpu")),
+            "gpu_nom": _echapper(core.t("param_gpu")),
+            "gpu_aide": _echapper(core.t("param_gpu_aide")),
+            "gpu_cartes": _echapper(
+                core.t("param_gpu_cartes", ", ".join(cartes)) if cartes
+                else ""),
+            "gpus": choix("gpu", (
+                ("auto", core.t("gpu_auto")),
+                ("performance", core.t("gpu_performance")),
+                ("economie", core.t("gpu_economie"))),
+                cfg.get("gpu") or "auto"),
+            "t_motif": _echapper(core.t("titre_motif")),
+            "motif_nom": _echapper(core.t("param_motif")),
+            "motif_aide": _echapper(core.t("param_motif_aide")),
+            "motifs": motifs,
+            "motifs_css": motifs_css,
+            "motif_css": ui.motif_css(),
+            "rayon": str(ui.rayon_css(forme_prise)),
+            "forme_nom": _echapper(core.t("param_forme")),
+            "forme_aide": _echapper(core.t("param_forme_aide")),
+            "formes": formes,
             "mot_actif": json.dumps(core.t("param_actif")),
             "mot_inactif": json.dumps(core.t("param_inactif")),
         }
@@ -6432,8 +6711,49 @@ class Navigateur(Form):
         if len(restants) == len(groupe["onglets"]):
             return          # deja partie, rien a dire
         groupe["onglets"] = restants
+        self._carte_ouverte = (nom, time.time())
         self.enregistrer_travail()
         self.signaler(core.t("retire_de", nom), erreur=False)
+
+    def ouvrir_page_seule(self, url):
+        """Ouvre une seule page d'un groupe, sans entrainer les autres.
+
+        On n'a pas toujours besoin de toute une habitude : parfois d'une
+        page, et d'une seule.
+        """
+        if not url.startswith(("http://", "https://", "file:")):
+            return
+        deja = [o for o in self.onglets
+                if (o.url or "").rstrip("/") == url.rstrip("/")]
+        if deja:
+            # Deja ouverte : on y va, plutot que d'en poser une seconde.
+            self.activer(deja[0], glisser=True)
+            return
+        self.nouvel_onglet(url)     # il s'active en naissant
+
+    def basculer_page_du_groupe(self, nom, url):
+        """Ecarte une page du groupe, ou la remet.
+
+        Ecartee, elle reste dans la liste et garde sa place : c'est la
+        difference avec la retirer. Le groupe ne l'ouvre simplement pas.
+        """
+        cle = (url or "").rstrip("/")
+        if not nom or not cle:
+            return
+        self.recharger_travail()
+        groupe = core.groupe_travail(self.travail, nom)
+        if groupe is None:
+            return
+        for entree in groupe["onglets"]:
+            if (entree.get("url") or "").rstrip("/") != cle:
+                continue
+            actif = not entree.get("actif", True)
+            entree["actif"] = actif
+            self._carte_ouverte = (nom, time.time())
+            self.enregistrer_travail()
+            self.signaler(core.t("page_gardee" if actif else "page_ecartee",
+                                 nom), erreur=False)
+            return
 
     def ouvrir_groupe_travail(self, nom):
         """Rouvre toutes les pages d'un groupe, sans doubler celles deja la."""
@@ -6446,6 +6766,8 @@ class Navigateur(Form):
         ouverts = 0
         premier = None
         for entree in groupe["onglets"]:
+            if not entree.get("actif", True):
+                continue        # ecartee : elle reste dans la liste, pas ici
             if entree["url"].rstrip("/") in deja:
                 continue
             onglet = self.nouvel_onglet(entree["url"])
@@ -8036,6 +8358,13 @@ class Navigateur(Form):
                 if isinstance(indices, list):
                     self.definir_couleurs_travail(nom, indices)
                 return
+            if message.get("action") == "ouvrir_page":
+                self.ouvrir_page_seule(str(message.get("url") or ""))
+                return
+            if message.get("action") == "basculer_page":
+                self.basculer_page_du_groupe(
+                    nom, str(message.get("url") or ""))
+                return
             if message.get("action") == "retirer_page":
                 self.retirer_page_du_groupe(nom,
                                             str(message.get("url") or ""))
@@ -8059,6 +8388,11 @@ class Navigateur(Form):
                 onglet_pub.vue.Source = Uri(adresse)
             except Exception as e:
                 journal("publicite demandee : %r" % (e,))
+            return
+        if genre == "maj" and message.get("action") == "relancer_reglage":
+            # Un reglage qui ne se prend qu'au demarrage du moteur : la
+            # carte graphique, ou le dossier du cache.
+            self.repartir_apres_le_moteur("reglage a prendre au demarrage")
             return
         if genre == "maj" and message.get("action") == "relancer":
             # Le moteur a change sous Plume : on repart dessus.
@@ -9584,6 +9918,55 @@ def jouer_repli(fenetre):
                 boite.Dispose()
         except Exception:
             pass
+
+
+def poser_dossier_telechargements(noyau, force=False):
+    """Dit au moteur ou poser les telechargements.
+
+    Rien a faire tant qu'aucun dossier n'a ete choisi : le moteur vise de
+    lui-meme celui de Windows. `force` sert au retour a l'origine, ou il faut
+    le lui redire, puisqu'il retient le dernier dossier donne.
+    """
+    if noyau is None:
+        return
+    voulu = str(core.CONFIG.get("dossier_telechargements") or "")
+    if voulu and not os.path.isdir(voulu):
+        journal("dossier de telechargement introuvable : %s" % voulu)
+        voulu = ""
+    if not voulu and not force:
+        return
+    cible = voulu or core.dossier_telechargements_windows()
+    try:
+        profil = noyau.Profile
+        if (str(profil.DefaultDownloadFolderPath or "").rstrip("\\/").lower()
+                != cible.rstrip("\\/").lower()):
+            profil.DefaultDownloadFolderPath = cible
+    except Exception as e:
+        journal("dossier de telechargement : %r" % (e,))
+
+
+def rafraichir_pages_locales(barres=False):
+    """Reecrit les pages de Plume et recharge les onglets qui les montrent.
+
+    L'adresse est comparee sans son ancre : la page des parametres y range
+    le volet ouvert, et une comparaison stricte la ratait a tous les coups.
+    Recharger garde l'ancre, donc le volet.
+    """
+    locales = (ACCUEIL.lower(), PARAMETRES.lower())
+    for fenetre in list(FENETRES):
+        try:
+            fenetre.ecrire_accueil()
+            fenetre.ecrire_parametres()
+            if barres:
+                fenetre.barre_onglets.Invalidate()
+                fenetre.barre_nav.Invalidate()
+            for onglet in list(fenetre.onglets):
+                if (onglet.url or "").lower().split("#")[0] in locales:
+                    noyau = onglet.vue.CoreWebView2
+                    if noyau is not None:
+                        noyau.Reload()
+        except Exception as e:
+            journal("pages locales : %r" % (e,))
 
 
 def appliquer_theme_partout():

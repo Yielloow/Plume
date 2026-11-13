@@ -6,6 +6,39 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.27 (2026-11-12)
+
+- **The graphics card can be chosen.** On a machine with two cards, Windows
+  handed Plume the processor's chip. Settings, General: let Windows decide,
+  high performance or power saving. The choice applies to Plume, its engine
+  and its video player, and takes effect at the next start, which a banner
+  offers right away.
+- **The downloads folder and the cache folder can be chosen.** The first
+  takes effect immediately. For the second, only the cache moves, what the
+  engine can download again: the profile, passwords and session, stays put.
+- **Patterns, and a shape for tabs.** Dots, diagonals, grid or chevrons,
+  drawn behind the tabs and on Plume's own pages; and rounded, square or wide
+  tabs. The preview in the settings follows.
+- **A page in a group can be set aside without losing it.** A group is a
+  habit, and a habit does not always need all of its pages. The dot in front
+  of each page sets it aside: it stays in the list, in its place, but the
+  group no longer opens it. One click brings it back. The count on the card
+  announces what will open, not what is filed.
+- **A page in a group opens on its own.** Its title, in the list, opens it
+  without dragging the others along; if it is already open, Plume goes there
+  rather than adding a second one. The unfolded card widens, otherwise titles
+  were cut off after three words.
+- **YouTube no longer freezes on its big play button.** Reported in use: the
+  video started, the page froze under a grey veil, and nothing answered any
+  more. Plume silences a page and empties its video tag when its own player
+  takes over, which only happens on Twitch. But the call was made
+  unconditionally as every page finished loading: if YouTube's player had
+  already started by then, which depends on the machine and is certain on an
+  address that starts by itself such as a radio mix, Plume tore its source
+  away. Measured on the reported page: the video was playing at 27 seconds,
+  and came back empty, deaf to clicks. Silencing now happens only where
+  Plume's player actually takes over.
+
 ## 1.0.26 (2026-10-15)
 
 - **A page can be removed from a group from its card.** The gear on the card

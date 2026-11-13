@@ -45,6 +45,20 @@ DEFAULT_CONFIG = {
     # gel reste detecte et ecrit dans profil/plantages.txt, et « Relancer
     # Plume » reste dans le panneau de la roue.
     "reprise_auto": False,
+    # Le processeur graphique que Windows doit donner a Plume, a son moteur
+    # et a son lecteur : "auto", "performance" ou "economie". Sur une machine
+    # a deux cartes, Windows choisit souvent la puce du processeur, qui
+    # consomme moins : c'est rarement celle qu'on veut pour de la video.
+    "gpu": "auto",
+    # Ou tombent les telechargements. Vide : le dossier de Windows.
+    "dossier_telechargements": "",
+    # Ou le moteur range son cache, ce qu'il peut retelecharger. Vide : dans
+    # le profil. Le profil lui-meme, mots de passe et session, ne bouge pas.
+    "dossier_cache": "",
+    # Le motif dessine derriere les onglets et sur les pages de Plume, et la
+    # forme des onglets. Voir interface.py pour les noms acceptes.
+    "motif": "aucun",
+    "forme_onglets": "arrondis",
     # Ouverture dessinee au lancement. Mettre a false pour demarrer sec.
     "intro": True,
     # Glissement de la page en changeant d'onglet. C'est le geste le plus
@@ -517,8 +531,11 @@ def charger_groupes_travail():
         onglets = []
         for o in (brut.get("onglets") or [])[:MAX_ONGLETS_TRAVAIL]:
             if isinstance(o, dict) and o.get("url"):
+                # « actif » absent vaut vrai : les groupes ecrits avant que
+                # l'on puisse ecarter une page s'ouvrent comme avant.
                 onglets.append({"url": str(o["url"]),
-                                "titre": str(o.get("titre") or o["url"])[:90]})
+                                "titre": str(o.get("titre") or o["url"])[:90],
+                                "actif": bool(o.get("actif", True))})
         try:
             couleur = int(brut.get("couleur") or 0)
         except (TypeError, ValueError):
@@ -1008,7 +1025,7 @@ def memoire_mo():
 # Trois nombres : rupture, ajout, correction. Le fichier `version.json` publie
 # a cote du telechargement porte le meme, et c'est leur comparaison qui dit
 # s'il y a du neuf.
-VERSION = "1.0.26"
+VERSION = "1.0.27"
 
 # Delai entre deux verifications. Une par jour suffit largement : Plume n'est
 # pas un service, et interroger le reseau a chaque lancement serait une
@@ -1212,6 +1229,150 @@ def ecrire_config():
         return True
     except Exception:
         return False
+
+
+# ---- processeur graphique -------------------------------------------------
+# La cle ou Windows range la carte voulue pour chaque programme : c'est celle
+# qu'ecrit la page « Graphiques » des Parametres. La preference s'attache au
+# chemin complet de l'executable.
+_CLE_GPU = r"Software\Microsoft\DirectX\UserGpuPreferences"
+_CLASSE_AFFICHAGE = (r"SYSTEM\CurrentControlSet\Control\Class"
+                     r"\{4d36e968-e325-11ce-bfc1-08002be10318}")
+_PREFERENCES_GPU = {"performance": "GpuPreference=2;",
+                    "economie": "GpuPreference=1;"}
+
+
+def cartes_graphiques():
+    """Les cartes graphiques de la machine, par leur nom. Vide si illisible.
+
+    Lues dans le registre plutot que demandees a un outil : c'est immediat,
+    et cela marche sans droits particuliers. Les cartes virtuelles, celles
+    d'un casque ou d'un bureau a distance, sont ecartees : on ne choisit pas
+    de jouer une video dessus.
+    """
+    import winreg
+    noms = []
+    try:
+        racine = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _CLASSE_AFFICHAGE)
+    except OSError:
+        return noms
+    try:
+        indice = 0
+        while True:
+            try:
+                sous = winreg.EnumKey(racine, indice)
+            except OSError:
+                break
+            indice += 1
+            if not (len(sous) == 4 and sous.isdigit()):
+                continue
+            try:
+                with winreg.OpenKey(racine, sous) as cle:
+                    nom = str(winreg.QueryValueEx(cle, "DriverDesc")[0]).strip()
+            except OSError:
+                continue
+            bas = nom.lower()
+            if not nom or any(m in bas for m in (
+                    "basic display", "remote", "virtual", "idd", "parsec",
+                    "meta ", "oculus", "mirror", "citrix")):
+                continue
+            if nom not in noms:
+                noms.append(nom)
+    finally:
+        winreg.CloseKey(racine)
+    return noms
+
+
+def executables_graphiques():
+    """Les programmes dont la carte graphique compte : Plume, moteur, lecteur.
+
+    Le moteur change de dossier a chaque mise a jour, un par version : on les
+    releve tous, et c'est pourquoi la preference est redite a chaque
+    lancement.
+    """
+    chemins = []
+    if EXECUTABLE:
+        chemins.append(str(EXECUTABLE))
+    if MPV:
+        chemins.append(str(MPV))
+    for racine in (r"%ProgramFiles(x86)%\Microsoft\EdgeWebView\Application",
+                   r"%ProgramFiles%\Microsoft\EdgeWebView\Application",
+                   r"%LOCALAPPDATA%\Microsoft\EdgeWebView\Application"):
+        dossier = Path(os.path.expandvars(racine))
+        try:
+            for version in dossier.iterdir():
+                moteur = version / "msedgewebview2.exe"
+                if moteur.is_file():
+                    chemins.append(str(moteur))
+        except OSError:
+            continue
+    return chemins
+
+
+def appliquer_gpu(preference=None):
+    """Dit a Windows quelle carte donner a Plume. Rend le nombre d'ecritures.
+
+    « auto » retire ce que Plume avait ecrit et rend la main a Windows. Rien
+    ne change pour un programme deja lance : la carte se choisit au
+    demarrage du processus.
+    """
+    import winreg
+    preference = preference or CONFIG.get("gpu") or "auto"
+    valeur = _PREFERENCES_GPU.get(preference)
+    faits = 0
+    try:
+        cle = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _CLE_GPU, 0,
+                                 winreg.KEY_SET_VALUE)
+    except OSError:
+        return 0
+    try:
+        for chemin in executables_graphiques():
+            try:
+                if valeur:
+                    winreg.SetValueEx(cle, chemin, 0, winreg.REG_SZ, valeur)
+                else:
+                    winreg.DeleteValue(cle, chemin)
+                faits += 1
+            except OSError:
+                continue        # rien a retirer, ou ecriture refusee
+    finally:
+        winreg.CloseKey(cle)
+    return faits
+
+
+# ---- dossiers -------------------------------------------------------------
+def dossier_telechargements_windows():
+    """Le dossier Telechargements de Windows, la ou il est vraiment."""
+    import winreg
+    try:
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Explorer"
+                r"\User Shell Folders") as cle:
+            brut = winreg.QueryValueEx(
+                cle, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+        chemin = os.path.expandvars(str(brut))
+        if os.path.isdir(chemin):
+            return chemin
+    except OSError:
+        pass
+    return str(Path.home() / "Downloads")
+
+
+def dossier_cache_utilisable():
+    """Le dossier de cache choisi, s'il existe ou peut etre cree. Sinon vide.
+
+    Un dossier introuvable, disque debranche ou chemin efface, ne doit pas
+    empecher Plume de demarrer : le cache retourne alors dans le profil.
+    """
+    voulu = str(CONFIG.get("dossier_cache") or "").strip()
+    if not voulu:
+        return ""
+    try:
+        Path(voulu).mkdir(parents=True, exist_ok=True)
+        return voulu if os.path.isdir(voulu) else ""
+    except OSError:
+        return ""
 
 
 def definir_reglage(cle, valeur):
