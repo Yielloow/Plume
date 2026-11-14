@@ -6,6 +6,31 @@ Released versions live in the
 [Releases](https://github.com/Yielloow/Plume/releases). The reasoning behind
 each change is in the commit messages.
 
+## 1.0.28 (2026-11-13)
+
+- **YouTube ad removal is harder to see.** Four things gave it away to anyone
+  looking. Blocked requests were answered "403 Blocked by Plume": they now get
+  an empty, successful response, and the ad networks' small status script
+  gets what it would have said itself. The hooks on response parsing showed
+  their code, with a name and a length that were not the original's: they now
+  return the exact text, name and length of the function they stand in for,
+  measured on the page. And the player's first response goes back to being a
+  plain value once cleaned, instead of staying an accessor. Plume does not
+  fake any ad view, though: telling an ad network an ad was seen makes
+  someone pay for nothing.
+- **YouTube no longer locks up under a dark veil.** The page dimmed as if
+  behind a dialog, no dialog showed, and the mouse did nothing at all: only
+  the keyboard got through. The cause was the "YouTube without ads" module.
+  It hid the content of the warning YouTube shows to ad blockers, while that
+  content lives in a modal dialog: the dialog and its veil stayed open, and
+  empty. Measured on a YouTube dialog put in the same state: zero height,
+  veil open, and a click on the page lands on the veil. The warning is no
+  longer hidden but closed through its own method, which takes the veil with
+  it, and the video it had paused starts again. If it resists, it stays
+  visible: a warning you can read beats a dead page.
+- The YouTube fix in 1.0.27 addressed a real fault, the silencing applied to
+  every page, but not this one, which looked exactly like it.
+
 ## 1.0.27 (2026-11-12)
 
 - **The graphics card can be chosen.** On a machine with two cards, Windows

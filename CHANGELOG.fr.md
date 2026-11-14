@@ -6,6 +6,35 @@ Les versions publiées se trouvent dans les
 [Releases](https://github.com/Yielloow/Plume/releases). Le détail de chaque
 changement, avec ses raisons, est dans les messages de commit.
 
+## 1.0.28 (2026-11-13)
+
+- **Le retrait des pubs de YouTube se voit moins.** Quatre choses le
+  trahissaient à qui regarde. Les requêtes bloquées recevaient un « 403
+  Blocked by Plume » : elles reçoivent une réponse vide et réussie, et le
+  petit script de statut des régies reçoit ce qu'il aurait dit lui-même. Les
+  crochets posés sur la lecture des réponses montraient leur code, un nom et
+  une longueur qui n'étaient pas ceux de l'original : ils rendent maintenant
+  le texte, le nom et la longueur exacts de la fonction qu'ils doublent,
+  mesure faite sur la page. Et la première réponse du lecteur redevient une
+  valeur simple une fois nettoyée, au lieu de rester un accesseur. Plume ne
+  simule en revanche aucun affichage de publicité : faire croire à une régie
+  qu'une pub a été vue, c'est la faire payer pour rien.
+- **YouTube ne se bloque plus sous un voile sombre.** La page s'assombrissait
+  comme derrière une fenêtre, mais aucune fenêtre ne s'affichait, et la
+  souris n'avait plus aucun effet : seul le clavier passait. La cause était
+  le module « YouTube sans publicité ». Il cachait le contenu de
+  l'avertissement que YouTube adresse aux bloqueurs de publicité, alors que
+  ce contenu vit dans une fenêtre modale : la fenêtre et son voile restaient
+  ouverts, et vides. Mesure faite sur une fenêtre de YouTube mise dans le
+  même état : hauteur nulle, voile ouvert, et un clic sur la page tombe sur
+  le voile. L'avertissement n'est plus caché, il est fermé par sa propre
+  méthode, ce qui emporte le voile, et la vidéo qu'il avait mise en pause
+  repart. S'il résiste, il reste visible : un avertissement qu'on lit vaut
+  mieux qu'une page morte.
+- La correction de la 1.0.27 sur YouTube visait un vrai défaut, la mise en
+  sourdine posée sur toutes les pages, mais pas celui-ci, qui en avait
+  pourtant toute l'apparence.
+
 ## 1.0.27 (2026-11-12)
 
 - **La carte graphique se choisit.** Sur une machine à deux cartes, Windows

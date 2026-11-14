@@ -193,6 +193,12 @@ HOTES_PUBS = (
     "adskeeper.com", "waust.at", "luckyforbet.com", "cpmrevenuegate.com",
 )
 
+# Une image d'un pixel, transparente : ce qu'on rend a la place d'une image
+# publicitaire, pour que la page ne voie pas une image qui ne charge pas.
+GIF_VIDE = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff"
+            b"!\xf9\x04\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00"
+            b"\x01\x00\x00\x02\x02D\x01\x00;")
+
 MOTIFS_PUBS = ["*://*.%s/*" % hote for hote in HOTES_PUBS] + [
     # Et quelques chemins, qui valent sur n'importe quel hote.
     "*://*/pagead/*",
@@ -2215,28 +2221,94 @@ JS_SANS_PUB = r"""
     } catch (e) {}
     return o;
   }
-  var lire = JSON.parse;
-  JSON.parse = function () { return nettoyer(lire.apply(this, arguments)); };
-  var enJson = Response.prototype.json;
-  Response.prototype.json = function () {
-    return enJson.apply(this, arguments).then(nettoyer);
-  };
+  // Des crochets qui ont l'air de ce qu'ils remplacent. Poses comme de
+  // simples fonctions, ils se trahissaient de trois facons, mesure faite :
+  // un texte qui montre du code au lieu de « [native code] », un nom qui
+  // n'est pas « parse », une longueur de 0 au lieu de 2. Une page qui veut
+  // savoir si on lui filtre ses reponses n'a qu'a regarder. Un Proxy garde
+  // le nom et la longueur de l'original ; son texte, lui, perd le nom, d'ou
+  // la lecture du texte elle-meme deguisee, qui rend a chaque crochet le
+  // texte exact de la fonction qu'il double.
+  var texte_natif = Function.prototype.toString;
+  var deguises = new WeakMap();
+  function deguiser(natif, piege) {
+    var faux = new Proxy(natif, { apply: piege });
+    deguises.set(faux, texte_natif.call(natif));
+    return faux;
+  }
+  Function.prototype.toString = deguiser(texte_natif,
+    function (cible, moi, args) {
+      return deguises.has(moi) ? deguises.get(moi)
+                               : Reflect.apply(cible, moi, args);
+    });
+  JSON.parse = deguiser(JSON.parse, function (cible, moi, args) {
+    return nettoyer(Reflect.apply(cible, moi, args));
+  });
+  Response.prototype.json = deguiser(Response.prototype.json,
+    function (cible, moi, args) {
+      return Reflect.apply(cible, moi, args).then(nettoyer);
+    });
   // La premiere reponse est ecrite dans la page par un script, sous la forme
   // « var ytInitialPlayerResponse = {...} » : l'affectation passe par ici.
-  var initiale;
+  // Une fois nettoyee, la propriete redevient une valeur simple, ce qu'elle
+  // est sans Plume : un accesseur laisse en place se voyait d'un coup d'oeil.
   try {
     Object.defineProperty(window, "ytInitialPlayerResponse", {
-      configurable: true,
-      get: function () { return initiale; },
-      set: function (v) { initiale = nettoyer(v); }
+      configurable: true, enumerable: true,
+      get: function () { return undefined; },
+      set: function (v) {
+        Object.defineProperty(window, "ytInitialPlayerResponse", {
+          value: nettoyer(v), writable: true,
+          enumerable: true, configurable: true
+        });
+      }
     });
   } catch (e) {}
+
+  // --- L'avertissement anti-bloqueur, ferme comme on le fermerait soi-meme.
+  // Surtout ne pas le cacher : il vit dans une fenetre modale, et cacher son
+  // contenu laisse la fenetre et son voile. Mesure faite sur une fenetre de
+  // YouTube mise dans cet etat : elle tombe a une hauteur nulle, le voile
+  // reste ouvert, et un clic sur la page tombe sur lui. La page assombrie ne
+  // repondait plus qu'au clavier. On la ferme donc par sa propre methode,
+  // qui emporte le voile avec elle ; et si elle resiste, elle reste visible :
+  // un avertissement qu'on lit vaut mieux qu'une page morte.
+  var averti = 0;
+  function fermer_avertissement() {
+    var vue = document.querySelector("ytd-enforcement-message-view-model");
+    if (!vue) return;
+    var fenetre = vue.closest("tp-yt-paper-dialog");
+    if (!fenetre || !fenetre.opened || typeof fenetre.close !== "function") return;
+    if (Date.now() - averti < 1500) return;      // une tentative a la fois
+    averti = Date.now();
+    try { fenetre.close(); } catch (e) { return; }
+    signaler();
+    setTimeout(function () {
+      // Le voile attend la fin d'un fondu, qui peut ne jamais venir. On ne
+      // le retire que si aucune autre fenetre visible n'en a besoin : celle
+      // du consentement, par exemple, le partage.
+      var autre = [].some.call(document.querySelectorAll("tp-yt-paper-dialog"),
+        function (d) { return d.opened && d.offsetHeight > 0; });
+      if (!autre) {
+        [].forEach.call(
+          document.querySelectorAll("tp-yt-iron-overlay-backdrop.opened"),
+          function (v) { v.remove(); });
+      }
+      // L'avertissement met la video en pause en s'ouvrant : on la relance.
+      var v = document.querySelector(".html5-video-player video");
+      if (v && v.paused) {
+        var lecture = v.play();
+        if (lecture && lecture.catch) lecture.catch(function () {});
+      }
+    }, 1200);
+  }
 
   // --- 2. Le filet, pour ce qui passerait quand meme.
   // Le son est rendu a la fin de la pub : c'est le meme element video pour
   // la pub et pour la video, le laisser coupe couperait la suite.
   var coupe = false;
   setInterval(function () {
+    fermer_avertissement();
     var joueur = document.querySelector(".html5-video-player");
     if (!joueur) return;
     var v = joueur.querySelector("video");
@@ -2265,7 +2337,7 @@ JS_SANS_PUB = r"""
     "ytd-display-ad-renderer", "ytd-promoted-sparkles-web-renderer",
     "ytd-promoted-video-renderer", "ytd-companion-slot-renderer",
     "ytd-action-companion-ad-renderer", "#masthead-ad", "#player-ads",
-    ".ytp-ad-overlay-container", "ytd-enforcement-message-view-model",
+    ".ytp-ad-overlay-container",
     "ytd-rich-item-renderer:has(ytd-ad-slot-renderer)",
     "ytd-engagement-panel-section-list-renderer[target-id='engagement-panel-ads']"
   ].join(",") + "{display:none!important}";
@@ -3270,16 +3342,51 @@ class Onglet(object):
             journal("moteur perdu : %r" % (e,))
 
     def au_requete(self, envoyeur, args):
-        """Refuse les requetes publicitaires, sans meme les emettre."""
+        """Repond a la place des regies, sans emettre la requete.
+
+        Par une reponse vide et reussie, et non par un refus. Un « 403
+        Blocked by Plume » se lit de la page : le script qui ne charge pas,
+        la requete qui echoue, c'est exactement ce qu'un site regarde pour
+        savoir qu'on le filtre. Une reponse vide ne dit rien. Le petit script
+        de statut des regies recoit meme ce qu'il aurait dit lui-meme.
+        """
         if not core.module_actif("ext_sans_pub"):
             return          # module coupe : la requete suit son cours
         try:
             noyau = self.vue.CoreWebView2
+            requete = args.Request
+            adresse = str(requete.Uri or "")
+            chemin = adresse.split("?", 1)[0].lower()
+            contexte = args.ResourceContext
+            corps, genre = b"", "text/plain"
+            if (contexte == CoreWebView2WebResourceContext.Script
+                    or chemin.endswith(".js")):
+                genre = "text/javascript"
+                if chemin.endswith("/ad_status.js"):
+                    corps = b"window.google_ad_status = 1;"
+            elif contexte == CoreWebView2WebResourceContext.Image:
+                genre, corps = "image/gif", GIF_VIDE
+            entetes = ["Content-Type: " + genre, "Cache-Control: no-store"]
+            # Une requete venue d'un autre domaine n'est « reussie » pour la
+            # page que si la reponse l'y autorise : sans ces lignes, la
+            # reponse vide echouerait comme le refus qu'elle remplace.
+            en_tetes = requete.Headers
+            if en_tetes.Contains("Origin"):
+                entetes.append("Access-Control-Allow-Origin: "
+                               + str(en_tetes.GetHeader("Origin")))
+                entetes.append("Access-Control-Allow-Credentials: true")
+                entetes.append("Access-Control-Allow-Methods: "
+                               "GET, POST, OPTIONS")
+                if en_tetes.Contains("Access-Control-Request-Headers"):
+                    entetes.append(
+                        "Access-Control-Allow-Headers: " + str(
+                            en_tetes.GetHeader(
+                                "Access-Control-Request-Headers")))
             args.Response = noyau.Environment.CreateWebResourceResponse(
-                None, 403, "Blocked by Plume", "")
+                MemoryStream(corps), 200, "OK", "\n".join(entetes))
             self.nav.pubs_bloquees += 1
-        except Exception:
-            pass
+        except Exception as e:
+            journal("requete publicitaire : %r" % (e,))
 
     def avancer_a(self, valeur):
         self.progression = valeur
